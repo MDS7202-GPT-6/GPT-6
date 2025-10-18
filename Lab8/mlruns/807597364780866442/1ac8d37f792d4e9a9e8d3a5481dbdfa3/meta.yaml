@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/matiasgodoy/Universidad/2025-2/Lab MDS/GPT-6/mlruns/807597364780866442/1ac8d37f792d4e9a9e8d3a5481dbdfa3/artifacts
+end_time: 1760820116229
+entry_point_name: ''
+experiment_id: '807597364780866442'
+lifecycle_stage: active
+run_id: 1ac8d37f792d4e9a9e8d3a5481dbdfa3
+run_name: XGBoost con lr 0.006 y depth 8
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1760820113980
+status: 3
+tags: []
+user_id: matiasgodoy

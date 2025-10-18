@@ -1,0 +1,10 @@
+artifact_location: file:///Users/matiasgodoy/Universidad/2025-2/Lab MDS/GPT-6/mlruns/807597364780866442/models/m-736e81b631f64e688c24c627edd8a4af/artifacts
+creation_timestamp: 1760820108263
+experiment_id: '807597364780866442'
+last_updated_timestamp: 1760820109740
+model_id: m-736e81b631f64e688c24c627edd8a4af
+model_type: null
+name: model
+source_run_id: 8684dd7091834f28a346b7d042b6ac6c
+status: 2
+status_message: null
