@@ -1,0 +1,14 @@
+digest: 53a4949a
+name: dataset
+profile: '{"num_rows": 2620, "num_elements": 23580}'
+schema: '{"mlflow_colspec": [{"type": "double", "name": "ph", "required": false},
+  {"type": "double", "name": "Hardness", "required": true}, {"type": "double", "name":
+  "Solids", "required": true}, {"type": "double", "name": "Chloramines", "required":
+  true}, {"type": "double", "name": "Sulfate", "required": false}, {"type": "double",
+  "name": "Conductivity", "required": true}, {"type": "double", "name": "Organic_carbon",
+  "required": true}, {"type": "double", "name": "Trihalomethanes", "required": false},
+  {"type": "double", "name": "Turbidity", "required": true}]}'
+source: '{"tags": {"mlflow.user": "matiasgodoy", "mlflow.source.name": "/Users/matiasgodoy/Universidad/2025-2/Lab
+  MDS/GPT-6/Lab8/lab8.py", "mlflow.source.type": "LOCAL", "mlflow.source.git.commit":
+  "9a14327c7d83ff272db0432c49877a92f3c085b2"}}'
+source_type: code

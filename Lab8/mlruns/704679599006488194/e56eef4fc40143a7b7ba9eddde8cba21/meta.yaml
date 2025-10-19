@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/matiasgodoy/Universidad/2025-2/Lab MDS/GPT-6/mlruns/704679599006488194/e56eef4fc40143a7b7ba9eddde8cba21/artifacts
+end_time: 1760877675804
+entry_point_name: ''
+experiment_id: '704679599006488194'
+lifecycle_stage: active
+run_id: e56eef4fc40143a7b7ba9eddde8cba21
+run_name: XGB lr=0.109 nest=225 depth=6 mcw=9.5 subs=0.72 col=0.51 g=1.26 a=0.04 l=0.50
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1760877673845
+status: 3
+tags: []
+user_id: matiasgodoy

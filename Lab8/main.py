@@ -6,30 +6,25 @@ import pickle
 import traceback
 import uvicorn
 
-# ============================================================
-# 1️⃣ Inicialización
-# ============================================================
+
 app = FastAPI(
     title="💧 API de Potabilidad del Agua",
     description="Predice si el agua es potable o no según sus características químicas.",
     version="2.0"
 )
 
-# ============================================================
-# 2️⃣ Cargar modelo entrenado
-# ============================================================
+
 try:
     with open("models/best_model.pkl", "rb") as f:
         model = pickle.load(f)
-    print("✅ Modelo cargado correctamente.")
+    print("Modelo cargado correctamente.")
 except Exception as e:
-    print("⚠️ No se pudo cargar el modelo:", e)
+    print("No se pudo cargar el modelo:", e)
     model = None
 
 
-# ============================================================
-# 3️⃣ Página principal (formulario visual)
-# ============================================================
+# Nota: Se creó una míni vista web para facilitar la interacción con la API.
+# ver en http://127.0.0.1:8000
 @app.get("/", response_class=HTMLResponse)
 def home():
     html_content = """
@@ -69,9 +64,6 @@ def home():
     return HTMLResponse(content=html_content)
 
 
-# ============================================================
-# 4️⃣ Endpoint visual para predicción
-# ============================================================
 @app.post("/prediccion", response_class=HTMLResponse)
 def prediccion(
     ph: float = Form(...),
@@ -101,7 +93,7 @@ def prediccion(
         potabilidad = int(pred[0])
 
         color = "#2a9d8f" if potabilidad == 1 else "#e63946"
-        mensaje = "✅ El agua es POTABLE" if potabilidad == 1 else "🚱 El agua NO es potable"
+        mensaje = "El agua es POTABLE" if potabilidad == 1 else "El agua NO es potable"
 
         html_resultado = f"""
         <html><body style="font-family:Arial; background:#f7f9fc; margin:50px;">
@@ -116,14 +108,12 @@ def prediccion(
         return HTMLResponse(content=html_resultado)
 
     except Exception as e:
-        print("❌ Error interno:", e)
+        print("Error interno:", e)
         print(traceback.format_exc())
         return HTMLResponse(f"<p>Error: {str(e)}</p>", status_code=500)
 
 
-# ============================================================
-# 5️⃣ Endpoint alternativo para uso programático (JSON)
-# ============================================================
+
 @app.post("/potabilidad/")
 def predecir_json(muestra: dict):
     try:
@@ -135,8 +125,5 @@ def predecir_json(muestra: dict):
         return {"error": str(e)}
 
 
-# ============================================================
-# 6️⃣ Ejecutar servidor
-# ============================================================
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

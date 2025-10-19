@@ -20,6 +20,7 @@ from optuna.visualization import plot_optimization_history, plot_param_importanc
 import plotly.io as pio
 from datetime import datetime
 import importlib.metadata as md
+import subprocess
 
 
 # ==========================================
@@ -30,7 +31,7 @@ def load_data():
     df = pd.read_csv("/Users/matiasgodoy/Universidad/2025-2/Lab MDS/GPT-6/Lab8/water_potability.csv")
     X = df.drop(columns=["Potability"])
     y = df["Potability"]
-    return train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    return train_test_split(X, y, test_size=0.2, random_state=6, stratify=y)
 
 
 def create_preprocessor(X):
@@ -62,7 +63,7 @@ def create_model(preprocessor, params):
         ("xgb", XGBClassifier(
             objective="binary:logistic",
             eval_metric="logloss",
-            random_state=42,
+            random_state=6,
             n_jobs=-1,
             **params
         ))
@@ -76,22 +77,16 @@ def get_best_model(experiment_id):
     return best_model
 
 
+
+
 def log_requirements():
-    """Guarda las versiones de librerías utilizadas y las sube a MLflow."""
-    pkgs = ["mlflow", "optuna", "xgboost", "pandas", "numpy", "scikit-learn", "matplotlib"]
-    with open("requirements.txt", "w") as f:
-        for p in pkgs:
-            try:
-                v = md.version(p)
-                f.write(f"{p}=={v}\n")
-            except md.PackageNotFoundError:
-                pass
-    mlflow.log_artifact("requirements.txt")
+    """Genera un requirements.txt con todas las dependencias y lo sube a MLflow."""
+    req_path = "requirements.txt"
+    with open(req_path, "w") as f:
+        subprocess.run(["pip", "freeze"], stdout=f, text=True, check=True)
+    mlflow.log_artifact(req_path)
 
 
-# ==========================================
-# FUNCIÓN PRINCIPAL DEL LAB 8
-# ==========================================
 
 def optimize_model():
     # --- Configurar tracking local ---
@@ -105,7 +100,7 @@ def optimize_model():
     preprocessor = create_preprocessor(X_train)
 
     # --- Crear experimento nuevo ---
-    exp_name = f"Lab8_XGBoost_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    exp_name = f"Lab8_XGBoost_Primer_Exp"
     mlflow.set_experiment(exp_name)
     experiment = mlflow.get_experiment_by_name(exp_name)
     exp_id = experiment.experiment_id
@@ -114,7 +109,7 @@ def optimize_model():
     def objective(trial):
         params = suggest_params(trial)
         model = create_model(preprocessor, params)
-        run_name = f"XGBoost con lr {params['learning_rate']:.3f} y depth {params['max_depth']}"
+        run_name = run_name = f"XGB lr={params['learning_rate']:.3f} nest={params['n_estimators']} depth={params['max_depth']} mcw={params['min_child_weight']:.1f} subs={params['subsample']:.2f} col={params['colsample_bytree']:.2f} g={params['gamma']:.2f} a={params['reg_alpha']:.2f} l={params['reg_lambda']:.2f}"
 
         with mlflow.start_run(experiment_id=exp_id, run_name=run_name):
             mlflow.sklearn.autolog(log_models=True, silent=True)
@@ -125,7 +120,7 @@ def optimize_model():
             return f1
 
     # --- Ejecutar optimización ---
-    study = optuna.create_study(direction="maximize", sampler=TPESampler(seed=42))
+    study = optuna.create_study(direction="maximize", sampler=TPESampler(seed=6))
     study.optimize(objective, n_trials=20)
 
     # --- Crear carpetas de artefactos ---
@@ -165,10 +160,9 @@ def optimize_model():
     # --- Guardar versiones de librerías ---
     log_requirements()
 
-    print(f"✅ Experimento: {exp_name}")
-    print(f"⭐ Mejor F1-score: {study.best_value:.4f}")
-    print(f"📊 Artefactos guardados en carpeta: plots/")
-    print(f"📦 Modelo guardado en: models/best_model.pkl")
+    print(f"Experimento: {exp_name}")
+    print(f"Mejor F1-score: {study.best_value:.4f}")
+    print(f"Modelo guardado en: models/best_model.pkl")
     return exp_id, study
 
 
