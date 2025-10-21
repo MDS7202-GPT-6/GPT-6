@@ -8,7 +8,7 @@ import uvicorn
 
 
 app = FastAPI(
-    title="💧 API de Potabilidad del Agua",
+    title="API de Potabilidad del Agua",
     description="Predice si el agua es potable o no según sus características químicas.",
     version="2.0"
 )

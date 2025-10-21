@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/delaneytello/Desktop/Laboratorio_ciencia_datos/GPT-6/Lab8/mlruns/138044535354841993/e5d1d435019c49e3abf32ed5bbebabc5/artifacts
+end_time: 1761014323275
+entry_point_name: ''
+experiment_id: '138044535354841993'
+lifecycle_stage: active
+run_id: e5d1d435019c49e3abf32ed5bbebabc5
+run_name: rogue-stork-56
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1761014320964
+status: 3
+tags: []
+user_id: delaneytello
