@@ -44,6 +44,8 @@ def home():
     </head>
     <body>
         <h1>💧 API de Potabilidad del Agua</h1>
+        <p><strong>Modelo:</strong> El modelo es de tipo XGBoost para clasificación binaria.</p>
+        <p><strong>Problema:</strong> Clasificar si una medición de agua es potable (1) o no potable (0) (salidas del modelo) según 9 variables químicas (entradas: tipo float).</p>
         <p>Ingrese las mediciones químicas para predecir si el agua es potable.</p>
 
         <form action="/prediccion" method="post">

@@ -20,7 +20,6 @@ from optuna.visualization import plot_optimization_history, plot_param_importanc
 import plotly.io as pio
 from datetime import datetime
 import importlib.metadata as md
-import subprocess
 
 
 # ---------------------- FUNCIONES AUXILIARES
@@ -78,12 +77,26 @@ def get_best_model(experiment_id):
 
 
 def log_requirements():
-    """Genera un requirements.txt con todas las dependencias y lo sube a MLflow."""
-    req_path = "requirements.txt"
-    with open(req_path, "w") as f:
-        subprocess.run(["pip", "freeze"], stdout=f, text=True, check=True)
-    mlflow.log_artifact(req_path)
-
+    """Guarda las versiones de librerías utilizadas y las sube a MLflow."""
+    pkgs = [
+        "mlflow",
+        "optuna",
+        "xgboost",
+        "pandas",
+        "numpy",
+        "scikit-learn",
+        "matplotlib",
+        "plotly",
+        "importlib-metadata"
+    ]
+    with open("requirements.txt", "w") as f:
+        for p in pkgs:
+            try:
+                v = md.version(p)
+                f.write(f"{p}=={v}\n")
+            except md.PackageNotFoundError:
+                pass
+    mlflow.log_artifact("requirements.txt")
 
 
 def optimize_model():
