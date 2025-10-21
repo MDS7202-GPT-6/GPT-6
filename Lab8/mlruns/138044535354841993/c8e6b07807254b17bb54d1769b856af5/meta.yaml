@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/delaneytello/Desktop/Laboratorio_ciencia_datos/GPT-6/Lab8/mlruns/138044535354841993/c8e6b07807254b17bb54d1769b856af5/artifacts
+end_time: 1761014294239
+entry_point_name: ''
+experiment_id: '138044535354841993'
+lifecycle_stage: active
+run_id: c8e6b07807254b17bb54d1769b856af5
+run_name: XGB lr=0.054 nest=103 depth=10 mcw=1.2 subs=0.51 col=0.97 g=0.06 a=0.37
+  l=0.04
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1761014290975
+status: 3
+tags: []
+user_id: delaneytello

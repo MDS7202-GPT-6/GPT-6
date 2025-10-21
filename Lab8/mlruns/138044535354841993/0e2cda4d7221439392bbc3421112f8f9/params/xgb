@@ -1,0 +1,12 @@
+XGBClassifier(base_score=None, booster=None, callbacks=None,
+              colsample_bylevel=None, colsample_bynode=None,
+              colsample_bytree=0.5058111830614641, device=None,
+              early_stopping_rounds=None, enable_categorical=False,
+              eval_metric='logloss', feature_types=None, feature_weights=None,
+              gamma=1.5056415552648195, grow_policy=None, importance_type=None,
+              interaction_constraints=None, learning_rate=0.29446888017340334,
+              max_bin=None, max_cat_threshold=None, max_cat_to_onehot=None,
+              max_delta_step=None, max_depth=6, max_leaves=None,
+              min_child_weight=9.704315711921414, missing=nan,
+              monotone_constraints=None, multi_strategy=None, n_estimators=372,
+              n_jobs=-1, num_parallel_tree=None, ...)
