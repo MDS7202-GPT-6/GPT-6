@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: recsys_backend
+    ports:
+      - "8001:8001"
+    volumes:
+      # Montar modelos entrenados (read-only)
+      - ../../airflow/data/models:/app/models:ro
+      # Montar datos base (read-only)
+      - ../../airflow/data/raw:/app/data:ro
+    networks:
+      - recsys_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build: ./frontend
+    container_name: recsys_frontend
+    ports:
+      - "7861:7861"
+    depends_on:
+      - backend
+    networks:
+      - recsys_network
+
+networks:
+  recsys_network:
+    driver: bridge

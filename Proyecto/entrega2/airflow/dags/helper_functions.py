@@ -1,0 +1,574 @@
+import os
+import pandas as pd
+import numpy as np
+import mlflow
+import mlflow.lightgbm
+import shap
+import joblib
+from datetime import datetime
+from sklearn.metrics import f1_score, accuracy_score, classification_report
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, MinMaxScaler, OrdinalEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import FunctionTransformer
+from sklearn.cluster import KMeans
+from scipy.stats import ks_2samp
+
+# ====================================================
+# CONFIGURACIONES GLOBALES
+# ====================================================
+
+DATA_PATH = "/opt/airflow/data"
+MODEL_PATH = os.path.join(DATA_PATH, "models")
+PRED_PATH = os.path.join(DATA_PATH, "predictions")
+MLFLOW_TRACKING_URI = "http://mlflow:5001"
+MLFLOW_EXPERIMENT = "modelo_tiendas_ancla"
+
+# No ejecutar código de MLflow aquí (nivel superior)
+# Se inicializará dentro de cada función que lo necesite
+
+
+def _init_mlflow():
+    """Inicializa MLflow solo cuando se necesita (dentro de funciones)"""
+    try:
+        import mlflow
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_experiment(MLFLOW_EXPERIMENT)
+        print("MLflow inicializado correctamente")
+        return True
+    except Exception as e:
+        print(f"WARNING: MLflow no disponible: {e}")
+        print("WARNING: Continuando sin tracking de MLflow...")
+        return False
+
+
+# ====================================================
+# CLASES TRANSFORMADORAS PERSONALIZADAS
+# ====================================================
+
+class GeoClustering(BaseEstimator, TransformerMixin):
+    """Clustering geográfico basado en coordenadas X, Y"""
+    def __init__(self, n_clusters=4):
+        self.n_clusters = n_clusters
+        self.kmeans = None
+
+    def fit(self, X, y=None):
+        if "X" in X.columns and "Y" in X.columns:
+            coords = X[["X", "Y"]].dropna()
+            if len(coords) > 0:
+                self.kmeans = KMeans(n_clusters=self.n_clusters, random_state=42)
+                self.kmeans.fit(coords)
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+        if self.kmeans is not None and "X" in X.columns and "Y" in X.columns:
+            mask = X[["X", "Y"]].notna().all(axis=1)
+            X.loc[mask, "geo_cluster"] = self.kmeans.predict(X.loc[mask, ["X", "Y"]])
+            X["geo_cluster"] = X["geo_cluster"].fillna(-1).astype(int)
+        else:
+            X["geo_cluster"] = -1
+        return X
+
+
+class IQR(BaseEstimator, TransformerMixin):
+    """Eliminación de outliers usando método IQR - reemplaza con NaN, no elimina filas"""
+    def __init__(self, l=1.5):
+        self.l = l
+        self.inferior = None
+        self.superior = None
+
+    def fit(self, X, y=None):
+        q1 = X.quantile(0.25)
+        q3 = X.quantile(0.75)
+        iqr = q3 - q1
+        self.inferior = q1 - self.l * iqr
+        self.superior = q3 + self.l * iqr
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+        for col in X.columns:
+            # Reemplazar outliers con NaN en lugar de eliminar filas
+            mask = (X[col] < self.inferior[col]) | (X[col] > self.superior[col])
+            X.loc[mask, col] = np.nan
+        return X
+
+
+class FeatureAggregator(BaseEstimator, TransformerMixin):
+    """
+    Genera features de frecuencia, trimestre y otras agregaciones temporales.
+    Requiere df_transacciones como parámetro en transform().
+    """
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, df_transacciones=None):
+        if df_transacciones is None:
+            raise ValueError("Necesitas pasar df_transacciones a transform()")
+
+        X = X.copy()
+        df_transacciones = df_transacciones.copy()
+        df_transacciones["purchase_date"] = pd.to_datetime(df_transacciones["purchase_date"])
+
+        # Crear fecha_actual para cada fila
+        X["fecha_actual"] = pd.to_datetime(
+            X["Año"].astype(str) + "-W" + X["Semana"].astype(str) + "-1",
+            format="%G-W%V-%u"
+        )
+        
+        # Preparar transacciones solo con columnas necesarias para evitar duplicados
+        trans = df_transacciones[["customer_id", "product_id", "purchase_date"]].copy()
+        trans = trans.rename(columns={"purchase_date": "fecha_compra"})
+
+        # Merge para obtener compras previas
+        merged = X.merge(trans, on=["customer_id", "product_id"], how="left")
+        merged = merged[merged["fecha_compra"] < merged["fecha_actual"]]
+
+        # Frecuencia por producto
+        freq = (
+            merged.groupby(["customer_id", "product_id", "Año", "Semana"])
+            .size()
+            .reset_index(name="frecuencia")
+        )
+        X = X.merge(freq, on=["customer_id", "product_id", "Año", "Semana"], how="left")
+        X["frecuencia"] = X["frecuencia"].fillna(0).astype(int)
+
+        # Trimestre
+        X["trimestre"] = X["fecha_actual"].dt.quarter
+
+        # Frecuencia por categoría
+        if "category" in X.columns:
+            freq_cat = (
+                merged.groupby(["customer_id", "category", "Año", "Semana"])
+                .size()
+                .reset_index(name="frecuencia_categoria")
+            )
+            X = X.merge(freq_cat, on=["customer_id", "category", "Año", "Semana"], how="left")
+            X["frecuencia_categoria"] = X["frecuencia_categoria"].fillna(0).astype(int)
+
+        # Frecuencia por marca
+        if "brand" in X.columns:
+            freq_brand = (
+                merged.groupby(["customer_id", "brand", "Año", "Semana"])
+                .size()
+                .reset_index(name="frecuencia_brand")
+            )
+            X = X.merge(freq_brand, on=["customer_id", "brand", "Año", "Semana"], how="left")
+            X["frecuencia_brand"] = X["frecuencia_brand"].fillna(0).astype(int)
+
+        X = X.drop(columns=["fecha_actual"])
+        return X
+
+
+# ====================================================
+# 🧱 1. CARGA DE DATOS
+# ====================================================
+
+def load_data():
+    """
+    Carga transacciones, clientes y productos desde /data/raw/
+    """
+    # Crear directorios si no existen
+    os.makedirs(MODEL_PATH, exist_ok=True)
+    os.makedirs(PRED_PATH, exist_ok=True)
+    
+    trans_path = os.path.join(DATA_PATH, "raw", "transacciones.parquet")
+    clientes_path = os.path.join(DATA_PATH, "raw", "clientes.parquet")
+    productos_path = os.path.join(DATA_PATH, "raw", "productos.parquet")
+    
+    print(f"Cargando datos desde {DATA_PATH}/raw ...")
+    df_transacciones = pd.read_parquet(trans_path)
+    df_clientes = pd.read_parquet(clientes_path)
+    df_productos = pd.read_parquet(productos_path)
+    
+    print(f"Transacciones: {df_transacciones.shape}")
+    print(f"Clientes: {df_clientes.shape}")
+    print(f"Productos: {df_productos.shape}")
+    
+    return df_transacciones, df_clientes, df_productos
+
+
+# ====================================================
+# 2. LIMPIEZA Y TRANSFORMACIÓN
+# ====================================================
+
+def preprocess_data(df_transacciones: pd.DataFrame, df_clientes: pd.DataFrame, df_productos: pd.DataFrame):
+    """
+    Pipeline completo de preprocesamiento según Entrega 1.
+    """
+    print("Iniciando preprocesamiento...")
+    
+    # 1. Convertir tipos de datos
+    df_clientes["customer_type"] = df_clientes["customer_type"].astype("string")
+    df_productos["brand"] = df_productos["brand"].astype("string")
+    df_productos["category"] = df_productos["category"].astype("string")
+    df_productos["sub_category"] = df_productos["sub_category"].astype("string")
+    df_productos["segment"] = df_productos["segment"].astype("string")
+    df_productos["package"] = df_productos["package"].astype("string")
+    
+    df_transacciones["purchase_date"] = pd.to_datetime(df_transacciones["purchase_date"])
+    
+    # 2. Agrupar y sumar items
+    df_transacciones = df_transacciones.groupby(
+        ["order_id", "product_id", "customer_id", "purchase_date"],
+        as_index=False
+    )["items"].sum()
+    
+    # 3. Filtrar items >= 0
+    df_transacciones = df_transacciones[df_transacciones["items"] >= 0]
+    
+    # 4. Crear variables temporales
+    df_transacciones["Semana"] = df_transacciones["purchase_date"].dt.isocalendar().week
+    df_transacciones["Año"] = df_transacciones["purchase_date"].dt.year
+    
+    # 5. Crear target
+    df_transacciones["target"] = 1
+    
+    # 6. Generar todas las combinaciones
+    clientes = df_transacciones["customer_id"].unique()
+    productos = df_transacciones["product_id"].unique()
+    semanas = df_transacciones[["Año", "Semana"]].drop_duplicates()
+    
+    todasCombinaciones = (
+        pd.DataFrame({"customer_id": clientes})
+        .merge(pd.DataFrame({"product_id": productos}), how="cross")
+        .merge(semanas, how="cross")
+    )
+    
+    # 7. Merge para completar con target=0
+    df = todasCombinaciones.merge(
+        df_transacciones[["customer_id", "product_id", "Año", "Semana", "target"]],
+        on=["customer_id", "product_id", "Año", "Semana"],
+        how="left"
+    )
+    df["target"] = df["target"].fillna(0).astype(int)
+    
+    # 8. Merge con clientes y productos
+    df = df.merge(df_clientes, on="customer_id").merge(df_productos, on="product_id")
+    
+    # 9. Eliminar duplicados
+    df = df.drop_duplicates()
+    
+    # 10. Imputar valores nulos en X con SimpleImputer
+    from sklearn.impute import SimpleImputer
+    imputer = SimpleImputer(strategy="most_frequent")
+    df[["X"]] = imputer.fit_transform(df[["X"]])
+    
+    print(f"Datos combinados: {df.shape}")
+    
+    # 11. Dividir en train/val/test respetando temporalidad
+    df_sorted = df.sort_values("Semana")
+    n = len(df_sorted)
+    train_end = int(n * 0.70)
+    val_end = int(n * 0.85)
+    
+    train_df = df_sorted.iloc[:train_end]
+    val_df = df_sorted.iloc[train_end:val_end]
+    test_df = df_sorted.iloc[val_end:]
+    
+    X_train = train_df.drop(columns=["target"])
+    y_train = train_df["target"]
+    X_val = val_df.drop(columns=["target"])
+    y_val = val_df["target"]
+    X_test = test_df.drop(columns=["target"])
+    y_test = test_df["target"]
+    
+    # 12. Undersampling para balancear
+    def underSamp(Xtrain, ytrain):
+        idx_class0 = np.where(ytrain == 0)[0]
+        idx_class1 = np.where(ytrain == 1)[0]
+        
+        # Calcular el tamaño máximo de muestra posible
+        max_ratio = len(idx_class0) // len(idx_class1) if len(idx_class1) > 0 else 1
+        target_ratio = min(10, max_ratio)  # Usar ratio 10 o el máximo posible
+        
+        if target_ratio < 1:
+            # Si no hay suficientes muestras clase 0, usar todas
+            print(f"WARNING: Pocas muestras clase 0 ({len(idx_class0)}), usando todas")
+            idx_class0_sampled = idx_class0
+        else:
+            sample_size = min(len(idx_class1) * target_ratio, len(idx_class0))
+            idx_class0_sampled = np.random.choice(idx_class0, size=sample_size, replace=False)
+        
+        idx_final = np.concatenate([idx_class0_sampled, idx_class1])
+        np.random.shuffle(idx_final)
+        
+        print(f"Balance final: clase 0={len(idx_class0_sampled)}, clase 1={len(idx_class1)}, ratio={len(idx_class0_sampled)/len(idx_class1):.2f}")
+        return Xtrain.iloc[idx_final], ytrain.iloc[idx_final]
+    
+    X_bal, y_bal = underSamp(X_train, y_train)
+    
+    print(f"Train balanceado: {X_bal.shape}, Val: {X_val.shape}, Test: {X_test.shape}")
+    
+    # 13. Definir pipeline de preprocesamiento
+    numeric_features = ["num_deliver_per_week", "num_visit_per_week", "size", "frecuencia", "frecuencia_categoria", "frecuencia_brand"]
+    categorical_features = ["customer_type", "brand", "category", "segment", "package", "geo_cluster", "trimestre"]
+    
+    # Usar los mejores hiperparámetros de Optuna
+    best_params = {
+        'n_clusters': 4,
+        'num_scaler': 'minmax',
+        'cat_encoder': 'onehot',
+        'max_depth': 14,
+        'min_samples_split': 10,
+        'min_samples_leaf': 8
+    }
+    
+    # Configurar scalers y encoders
+    if best_params["num_scaler"] == "standard":
+        num_scaler = StandardScaler()
+    else:
+        num_scaler = MinMaxScaler()
+    
+    if best_params["cat_encoder"] == "onehot":
+        cat_encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    elif best_params["cat_encoder"] == "ordinal":
+        cat_encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
+    else:
+        cat_encoder = "passthrough"
+    
+    numeric_pipeline = Pipeline([
+        ("iqr", IQR()),
+        ("imputer", SimpleImputer(fill_value=0, strategy="most_frequent")),
+        ("scaler", num_scaler)
+    ])
+    
+    categorical_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", cat_encoder)
+    ])
+    
+    preprocessor = ColumnTransformer([
+        ("num", numeric_pipeline, numeric_features),
+        ("cat", categorical_pipeline, categorical_features)
+    ])
+    
+    def agregar_features(X):
+        return FeatureAggregator().transform(X, df_transacciones=df_transacciones)
+    
+    pipeline_pp = Pipeline([
+        ("features", FunctionTransformer(agregar_features)),
+        ("geo_cluster", GeoClustering(n_clusters=best_params["n_clusters"])),
+        ("preprocessing", preprocessor)
+    ])
+    
+    # 14. Transformar datos
+    X_bal_transformed = pipeline_pp.fit_transform(X_bal)
+    X_val_transformed = pipeline_pp.transform(X_val)
+    
+    print(f"Transformación completa: train={X_bal_transformed.shape}, val={X_val_transformed.shape}")
+    
+    return X_bal_transformed, X_val_transformed, y_bal, y_val, X_test, y_test, pipeline_pp
+
+
+# ====================================================
+# 3. DETECCIÓN DE DRIFT
+# ====================================================
+
+def detect_drift(df_old: pd.DataFrame, df_new: pd.DataFrame, threshold: float = 0.1) -> bool:
+    """
+    Detecta drift entre datasets antiguos y nuevos usando test KS.
+    """
+    p_values = []
+    for col in df_old.columns:
+        if np.issubdtype(df_old[col].dtype, np.number):
+            try:
+                p = ks_2samp(df_old[col], df_new[col]).pvalue
+                p_values.append(p)
+            except Exception:
+                continue
+
+    avg_p = np.mean(p_values) if len(p_values) > 0 else 1.0
+    drift = avg_p < threshold
+    print(f"Promedio p-value={avg_p:.4f} -> Drift={drift}")
+    return drift
+
+
+# ====================================================
+# 4. OPTIMIZACIÓN CON OPTUNA
+# ====================================================
+
+def optimize_with_optuna(X_train, X_val, y_train, y_val, n_trials=30):
+    """
+    Optimiza hiperparámetros usando Optuna con conjunto de validación.
+    Se ejecuta solo cuando NO existe modelo previo.
+    """
+    import optuna
+    from optuna.samplers import TPESampler
+    
+    print(f"Iniciando optimización con Optuna ({n_trials} trials)...")
+    
+    def objective(trial):
+        params = {
+            'max_depth': trial.suggest_int('max_depth', 5, 20),
+            'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
+            'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
+            'random_state': 42
+        }
+        
+        model = DecisionTreeClassifier(**params)
+        model.fit(X_train, y_train)
+        
+        y_pred = model.predict(X_val)
+        f1 = f1_score(y_val, y_pred, average='macro')
+        
+        return f1
+    
+    study = optuna.create_study(
+        direction='maximize',
+        sampler=TPESampler(seed=42)
+    )
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+    
+    best_params = study.best_params
+    best_params['random_state'] = 42
+    
+    print(f"Optimización completada!")
+    print(f"Mejores hiperparámetros: {best_params}")
+    print(f"Mejor F1-score: {study.best_value:.4f}")
+    
+    return best_params
+
+
+# ====================================================
+# 5. ENTRENAMIENTO CON DecisionTree + MLflow + SHAP
+# ====================================================
+
+def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
+    """
+    Entrena DecisionTreeClassifier.
+    
+    Args:
+        X_train: Features de entrenamiento transformadas
+        X_val: Features de validación transformadas
+        y_train: Target de entrenamiento
+        y_val: Target de validación
+        optimize: Si True, optimiza hiperparámetros con Optuna. Si False, usa hiperparámetros de Entrega 1.
+    
+    Returns:
+        model: Modelo entrenado
+    """
+    # Intentar inicializar MLflow
+    mlflow_available = _init_mlflow()
+    
+    if optimize:
+        # Optimizar con Optuna (cuando NO existe modelo previo)
+        print("Primera ejecución: Optimizando hiperparámetros con Optuna...")
+        best_params = optimize_with_optuna(X_train, X_val, y_train, y_val, n_trials=30)
+    else:
+        # Usar hiperparámetros pre-optimizados de Entrega 1
+        print("Reentrenamiento: Usando hiperparámetros optimizados de Entrega 1")
+        best_params = {
+            'max_depth': 14,
+            'min_samples_split': 10,
+            'min_samples_leaf': 8,
+            'random_state': 42
+        }
+
+    print(f"🧠 Entrenando DecisionTreeClassifier con {best_params}")
+    model = DecisionTreeClassifier(**best_params)
+    model.fit(X_train, y_train)
+
+    preds = model.predict(X_val)
+    f1 = f1_score(y_val, preds, average='macro')
+    acc = accuracy_score(y_val, preds)
+    
+    print(f"📊 Métricas de validación: F1-macro={f1:.4f}, Accuracy={acc:.4f}")
+
+    # --- MLflow tracking (si está disponible) ---
+    if mlflow_available:
+        try:
+            with mlflow.start_run(run_name=f"DecisionTree_{datetime.now().strftime('%Y%m%d_%H%M')}"):
+                # Log hiperparámetros
+                mlflow.log_params(best_params)
+                
+                # Log métricas principales
+                mlflow.log_metric("f1_val_macro", f1)
+                mlflow.log_metric("acc_val", acc)
+                
+                # Log classification report detallado
+                report = classification_report(y_val, preds, output_dict=True)
+                for label in ['0', '1']:
+                    if label in report:
+                        mlflow.log_metric(f"precision_class_{label}", report[label]["precision"])
+                        mlflow.log_metric(f"recall_class_{label}", report[label]["recall"])
+                        mlflow.log_metric(f"f1_class_{label}", report[label]["f1-score"])
+                
+                mlflow.log_metric("precision_macro", report["macro avg"]["precision"])
+                mlflow.log_metric("recall_macro", report["macro avg"]["recall"])
+
+                # SHAP interpretabilidad
+                try:
+                    import matplotlib
+                    matplotlib.use('Agg')  # Backend sin GUI
+                    import matplotlib.pyplot as plt
+                    
+                    sample_size = min(300, len(X_val))
+                    if hasattr(X_val, 'sample'):
+                        sample = X_val.sample(sample_size, random_state=42)
+                    else:
+                        # Si es numpy array
+                        indices = np.random.choice(len(X_val), sample_size, replace=False)
+                        sample = X_val[indices]
+                    
+                    explainer = shap.TreeExplainer(model)
+                    shap_values = explainer.shap_values(sample)
+                    
+                    # Generar gráfico summary
+                    plt.figure(figsize=(10, 8))
+                    if isinstance(shap_values, list):
+                        # Para clasificación binaria, usar clase 1
+                        shap.summary_plot(shap_values[1], sample, show=False)
+                    else:
+                        shap.summary_plot(shap_values, sample, show=False)
+                    
+                    shap_plot_path = os.path.join(MODEL_PATH, f"shap_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                    plt.savefig(shap_plot_path, bbox_inches='tight', dpi=150)
+                    plt.close()
+                    
+                    mlflow.log_artifact(shap_plot_path)
+                    print(f"✅ Gráfico SHAP guardado y logueado en MLflow: {shap_plot_path}")
+                except Exception as e:
+                    print(f"⚠️ No se pudo generar gráfico SHAP: {e}")
+
+                # Guardar modelo en MLflow
+                mlflow.sklearn.log_model(model, "model")
+                print("✅ Modelo logueado en MLflow")
+                
+        except Exception as e:
+            print(f"⚠️ Error al loguear en MLflow: {e}")
+            print("⚠️ Continuando sin MLflow tracking...")
+    
+    # Guardar modelo localmente (siempre, independiente de MLflow)
+    model_path = os.path.join(MODEL_PATH, f"modelo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl")
+    joblib.dump(model, model_path)
+    print(f"💾 Modelo guardado localmente en: {model_path}")
+
+    print(f"✅ Entrenamiento completado | F1-macro={f1:.4f} | ACC={acc:.4f}")
+    return model
+
+
+# ====================================================
+# 📈 5. GENERACIÓN DE PREDICCIONES
+# ====================================================
+
+def predict_future_week(model, df_features: pd.DataFrame):
+    """
+    Usa el modelo para predecir la próxima semana (t+2).
+    Supone que df_features contiene la última semana t+1.
+    """
+    preds = model.predict_proba(df_features)[:, 1]
+    df_pred = df_features.copy()
+    df_pred["prediccion_compra"] = preds
+    df_pred["semana_predicha"] = df_pred["semana"].max() + 1
+
+    out_path = os.path.join(PRED_PATH, f"predicciones_{datetime.now().strftime('%Y%m%d')}.parquet")
+    df_pred.to_parquet(out_path, index=False)
+    print(f"📤 Predicciones guardadas en {out_path}")
+
+    return df_pred

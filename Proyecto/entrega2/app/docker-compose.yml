@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: sodai_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Compartir modelos generados por Airflow
+      - ../airflow/data/models:/app/models:ro
+      # Compartir predicciones de Airflow
+      - ../airflow/data/predictions:/app/predictions:ro
+      # Compartir datos base (parquets)
+      - ../airflow/data/raw:/app/data:ro
+    environment:
+      - MODELS_PATH=/app/models
+      - PREDICTIONS_PATH=/app/predictions
+      - DATA_PATH=/app/data
+    networks:
+      - sodai_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build: ./frontend
+    container_name: sodai_frontend
+    ports:
+      - "7860:7860"
+    depends_on:
+      - backend
+    environment:
+      - BACKEND_URL=http://backend:8000
+    networks:
+      - sodai_network
+
+networks:
+  sodai_network:
+    driver: bridge
