@@ -43,9 +43,9 @@ with DAG(
         os.system(f"curl -s -o {output_path} {url}")
 
         if os.path.exists(output_path):
-            print(f"✅ Archivo descargado correctamente en {output_path}")
+            print(f"Archivo descargado correctamente en {output_path}")
         else:
-            raise FileNotFoundError("❌ Error: No se descargó el archivo data_1.csv")
+            raise FileNotFoundError("Error: No se descargó el archivo data_1.csv")
 
     download_data_task = PythonOperator(
         task_id='download_data',

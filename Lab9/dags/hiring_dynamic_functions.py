@@ -70,7 +70,7 @@ def split_data(base_path, seed=42):
     y_train.to_csv(os.path.join(split_path, "y_train.csv"), index=False)
     y_test.to_csv(os.path.join(split_path, "y_test.csv"), index=False)
 
-    print(f"✅ Datos divididos y guardados en {split_path}")
+    print(f"Datos divididos y guardados en {split_path}")
 
 
 def train_model(base_path, model, model_name):
@@ -139,7 +139,7 @@ def evaluate_models(base_path):
             y_pred = pipeline.predict(X_test)
             acc = accuracy_score(y_test, y_pred)
             results[model_name] = acc
-            print(f"🔹 Modelo: {model_name} | Accuracy: {acc:.3f}")
+            print(f"Modelo: {model_name} | Accuracy: {acc:.3f}")
 
     if not results:
         raise ValueError("No se encontraron modelos entrenados en la carpeta 'models'.")

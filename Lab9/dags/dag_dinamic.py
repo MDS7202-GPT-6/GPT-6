@@ -60,7 +60,7 @@ with DAG(
 
         url = "https://gitlab.com/eduardomoyab/laboratorio-13/-/raw/main/files/data_1.csv"
         os.system(f"curl -s -o {os.path.join(base_path, 'data_1.csv')} {url}")
-        print("✅ data_1.csv descargado correctamente")
+        print("data_1.csv descargado correctamente")
 
     def download_data1_and_2(**kwargs):
         execution_date = kwargs.get('ds')
@@ -73,7 +73,7 @@ with DAG(
         ]
         for fname, url in urls:
             os.system(f"curl -s -o {os.path.join(base_path, fname)} {url}")
-            print(f"✅ {fname} descargado correctamente")
+            print(f"{fname} descargado correctamente")
 
     download_data1_task = PythonOperator(
         task_id='download_data1',
