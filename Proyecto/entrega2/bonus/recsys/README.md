@@ -2,115 +2,96 @@
 
 ## Descripción
 
-Sistema de recomendación personalizado que genera las mejores 5 recomendaciones de productos para cualquier cliente basándose en probabilidades predictivas del modelo de machine learning.
+Sistema de recomendación personalizado que evalúa todos los productos disponibles para un cliente específico y genera un ranking basado en la probabilidad de compra predicha por el modelo de machine learning.
 
-## Características
+## Componentes
 
-- **Recomendaciones personalizadas**: Evalúa todos los productos disponibles (~971) para un cliente específico
-- **Top N configurable**: Permite seleccionar entre 1 y 20 productos recomendados
-- **Scoring detallado**: Cada recomendación incluye:
-  - Probabilidad de compra
-  - Categoría del producto
-  - Marca
-  - Sub-categoría
-  - Segmento
-- **Backend/Frontend separados**: Arquitectura de microservicios dockerizada
-- **Interfaz amigable**: Frontend con Gradio para usuarios no técnicos
+### Backend (FastAPI)
+- **main.py**: API REST con 2 endpoints
+  - Carga automática del modelo más reciente desde Airflow (`modelo_*.pkl`)
+  - Carga del pipeline de preprocesamiento completo (`pipeline_pp.pkl`)
+  - Carga de datos históricos en formato parquet (transacciones, productos, clientes)
+  - El pipeline se encarga de todo el preprocesamiento (features, clustering, encoding)
+  - Documentación interactiva en `/docs`
 
-## Arquitectura
-
-```
-┌─────────────────────────────────────────────────┐
-│              Airflow Pipeline                   │
-│  (Genera modelo y datos)                        │
-│                                                 │
-│  Outputs:                                       │
-│  • /data/models/modelo_*.pkl                   │
-│  • /data/raw/*.parquet                         │
-└─────────────┬───────────────────────────────────┘
-              │ (volúmenes compartidos)
-              ▼
-┌─────────────────────────────────────────────────┐
-│           Sistema de Recomendación              │
-│                                                 │
-│  ┌──────────────┐         ┌──────────────┐    │
-│  │   Backend    │◄────────│   Frontend   │    │
-│  │  (FastAPI)   │         │  (Gradio)    │    │
-│  │  Port 8001   │         │  Port 7861   │    │
-│  └──────────────┘         └──────────────┘    │
-└─────────────────────────────────────────────────┘
-```
+### Frontend (Gradio)
+- **front.py**: Interfaz web con 2 pestañas
+  - **Recomendaciones**: Genera top N productos recomendados para un cliente
+  - **Estado del Sistema**: Monitorea el estado del backend, modelo y datos
 
 ## Requisitos Previos
 
-1. **Pipeline de Airflow ejecutado**: El modelo debe estar entrenado y guardado
-2. **Docker y Docker Compose**: Para levantar los servicios
+El pipeline de Airflow debe haberse ejecutado al menos una vez para generar:
+- Modelo entrenado: `../../airflow/data/models/modelo_*.pkl`
+- Pipeline de preprocesamiento: `../../airflow/data/models/pipeline_pp.pkl`
+- Datos en formato parquet: `../../airflow/data/raw/*.parquet`
 
-Verifica que existan:
+Si no has ejecutado Airflow, hazlo primero:
 ```bash
-ls -lh ../../airflow/data/models/modelo_*.pkl
-ls -lh ../../airflow/data/raw/*.parquet
+cd ../../airflow
+docker compose up -d
 ```
 
-## Instalación y Ejecución
+## Ejecución con Docker
 
-### Paso 1: Navegar al directorio
+### 1. Construir y levantar los servicios
 
-```bash
-cd /path/to/Proyecto/entrega2/bonus/recsys
-```
-
-### Paso 2: Construir y levantar servicios
+Desde el directorio `recsys/`:
 
 ```bash
 docker compose build
 docker compose up -d
 ```
 
-### Paso 3: Verificar contenedores
+Esto iniciará dos contenedores:
+- **recsys_backend**: API FastAPI en puerto 8001
+- **recsys_frontend**: Interfaz Gradio en puerto 7861
+
+### 2. Verificar que los servicios estén corriendo
 
 ```bash
 docker compose ps
-
-# Salida esperada:
-# NAME                STATUS              PORTS
-# recsys_backend      Up (healthy)        0.0.0.0:8001->8001/tcp
-# recsys_frontend     Up                  0.0.0.0:7861->7861/tcp
 ```
 
-### Paso 4: Acceder a las interfaces
+Deberías ver ambos contenedores con estado "Up".
 
-**Backend API (FastAPI):**
-```
-URL: http://localhost:8001
-Documentación: http://localhost:8001/docs
+### 3. Verificar logs
+
+```bash
+docker compose logs backend
 ```
 
-**Frontend (Gradio):**
-```
-URL: http://localhost:7861
-```
+Busca estas líneas que confirman que todo se cargó correctamente:
+- "Modelo cargado desde: /app/models/modelo_*.pkl"
+- "Pipeline de preprocesamiento cargado desde: /app/models/pipeline_pp.pkl"
+- "Datos cargados: X transacciones, Y productos, Z clientes"
+
+### 4. Acceder a las interfaces
+
+- **Backend API**: http://localhost:8001
+- **Documentación API**: http://localhost:8001/docs
+- **Frontend Web**: http://localhost:7861
 
 ## Uso de la API
 
-### Health Check
+La API expone los siguientes endpoints:
 
+### Endpoints Disponibles
+
+| Endpoint | Método | Descripción |
+|----------|--------|-------------|
+| `/` | GET | Información general de la API |
+| `/health` | GET | Estado del sistema (modelo, datos, pipeline) |
+| `/recommend` | POST | Genera recomendaciones personalizadas para un cliente |
+
+### Ejemplos de Uso
+
+#### 1. Verificar estado del sistema
 ```bash
 curl http://localhost:8001/health
 ```
 
-**Respuesta:**
-```json
-{
-  "status": "healthy",
-  "modelo_cargado": true,
-  "datos_cargados": true,
-  "timestamp": "2024-10-27T00:30:00"
-}
-```
-
-### Generar Recomendaciones
-
+#### 2. Generar recomendaciones
 ```bash
 curl -X POST "http://localhost:8001/recommend" \
   -H "Content-Type: application/json" \
@@ -121,7 +102,7 @@ curl -X POST "http://localhost:8001/recommend" \
   }'
 ```
 
-**Respuesta:**
+Respuesta:
 ```json
 {
   "cliente_id": 254403,
@@ -143,58 +124,21 @@ curl -X POST "http://localhost:8001/recommend" \
       "marca": "Brand 24",
       "sub_categoria": "GASEOSAS",
       "segmento": "LOW"
-    },
-    ...
+    }
   ],
   "timestamp": "2024-10-27T00:35:00"
 }
 ```
 
-## Uso desde Python
+El sistema evalúa todos los productos disponibles (~971) y devuelve los top N ordenados por probabilidad de compra.
 
-```python
-import requests
+## Documentación de la API
 
-# Generar recomendaciones
-data = {
-    "cliente_id": 254403,
-    "semana": 53,
-    "top_n": 5
-}
-response = requests.post("http://localhost:8001/recommend", json=data)
-result = response.json()
+La documentación interactiva está disponible en:
+- **Swagger UI**: http://localhost:8001/docs
+- **ReDoc**: http://localhost:8001/redoc
 
-print(f"Cliente: {result['cliente_id']}")
-print(f"Productos evaluados: {result['n_productos_evaluados']}")
-print("\nTop 5 Recomendaciones:")
-for rec in result['recomendaciones']:
-    print(f"{rec['ranking']}. Producto {rec['producto_id']} - {rec['probabilidad_compra']:.2%}")
-    print(f"   {rec['categoria']} - {rec['marca']} ({rec['segmento']})")
-```
-
-## Interfaz Gradio
-
-La interfaz web incluye:
-
-1. **Tab Recomendaciones**:
-   - Input: Cliente ID, Semana (opcional), Top N (slider 1-20)
-   - Output: Lista de productos recomendados con detalles
-   - Clasificación visual de probabilidades (MUY ALTA, ALTA, MEDIA, BAJA)
-
-2. **Tab Estado del Sistema**:
-   - Monitoreo del estado del backend
-   - Verificación de modelo y datos cargados
-
-3. **Accordion con explicación** del funcionamiento del sistema
-
-## Metodología
-
-El sistema funciona en 4 pasos:
-
-1. **Análisis de perfil**: Identifica características del cliente (tipo, región, zona)
-2. **Evaluación masiva**: Crea combinaciones cliente × todos_productos
-3. **Scoring predictivo**: Aplica el modelo ML para obtener probabilidad de compra
-4. **Ranking**: Ordena por probabilidad y devuelve top N
+Desde Swagger UI puedes probar todos los endpoints directamente desde el navegador.
 
 ## Estructura del Proyecto
 
@@ -202,92 +146,40 @@ El sistema funciona en 4 pasos:
 recsys/
 ├── backend/
 │   ├── main.py              # API FastAPI con endpoint /recommend
-│   ├── transformers.py      # Transformadores custom del pipeline
-│   ├── helper_functions.py  # Módulo de compatibilidad
-│   ├── requirements.txt
-│   └── Dockerfile
+│   ├── Dockerfile
+│   └── requirements.txt
 │
 ├── frontend/
-│   ├── front.py             # Interfaz Gradio
-│   ├── requirements.txt
-│   └── Dockerfile
+│   ├── front.py             # Interfaz Gradio (2 pestañas)
+│   ├── Dockerfile
+│   └── requirements.txt
 │
 ├── docker-compose.yml       # Orquestación de servicios
-└── README.md               # Esta documentación
+└── README.md
 ```
 
-## Volúmenes Compartidos
+## Diferencias con app/
 
-El sistema accede a:
+Este sistema está diseñado específicamente para recomendaciones:
 
-```yaml
-volumes:
-  # Modelos entrenados por Airflow (read-only)
-  - ../../airflow/data/models:/app/models:ro
-  
-  # Datos base (read-only)
-  - ../../airflow/data/raw:/app/data:ro
-```
+| Aspecto | app/ | recsys/ |
+|---------|------|---------|
+| **Propósito** | Predicción individual | Recomendaciones personalizadas |
+| **Endpoints** | /predict, /health, /model_info | /recommend, /health |
+| **Puerto Backend** | 8000 | 8001 |
+| **Puerto Frontend** | 7860 | 7861 |
+| **Funcionalidad** | Predice para cliente-producto específico | Evalúa todos los productos (~971) para un cliente |
+| **Output** | Sí/No comprará + probabilidad | Top N productos ordenados por probabilidad |
 
-## Puertos
-
-- **Backend**: 8001
-- **Frontend**: 7861
-
-Estos puertos son diferentes de la aplicación principal (app/) para evitar conflictos.
-
-## Casos de Uso
-
-1. **Campañas de Marketing**: Personalizar ofertas por cliente
-2. **App Móvil**: Mostrar productos sugeridos al abrir sesión
-3. **Email Marketing**: Enviar recomendaciones semanales
-4. **Optimización de Inventario**: Priorizar stock según demanda predictiva
-
-## Troubleshooting
-
-### Problema: "Modelo no cargado"
+## Detener la Aplicación
 
 ```bash
-# Verificar que exista el modelo
-ls -lh ../../airflow/data/models/modelo_*.pkl
-
-# Si no existe, ejecutar pipeline de Airflow
-cd ../../airflow
-docker compose exec airflow-scheduler airflow dags trigger sodai_ml_pipeline
-
-# Reiniciar recsys
-cd ../bonus/recsys
-docker compose restart backend
-```
-
-### Problema: Puerto 8001 ya en uso
-
-Editar `docker-compose.yml` y cambiar el puerto:
-```yaml
-ports:
-  - "8002:8001"  # Usar 8002 en lugar de 8001
-```
-
-### Problema: Error de conexión frontend → backend
-
-```bash
-# Ver logs
-docker compose logs backend
-docker compose logs frontend
-
-# Verificar red
-docker network inspect recsys_recsys_network
-```
-
-## Detener el Sistema
-
-```bash
-# Detener servicios
 docker compose down
-
-# Detener y limpiar
-docker compose down -v
 ```
+
+---
+
+**Proyecto**: SodAI Drinks - Laboratorio MDS 2025-2
 
 ## Diferencias con app/
 

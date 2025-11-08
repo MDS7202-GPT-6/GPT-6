@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List
 import pandas as pd
 import joblib
 import os
@@ -85,84 +84,31 @@ class PredictSingleInput(BaseModel):
     producto_id: int
     semana: int = None  # Si es None, usa semana actual + 1
 
-class PredictBatchInput(BaseModel):
-    clientes: List[int]
-    productos: List[int]
-    semana: int = None
-
 
 # ====================================================
-# Funciones auxiliares de preprocesamiento
+# Funciones auxiliares
 # ====================================================
 
-def preprocesar_para_prediccion(df_input, transacciones_hist, productos_df, clientes_df):
+def preparar_input_para_pipeline(df_input, productos_df, clientes_df):
     """
-    Aplica el mismo preprocesamiento que en el pipeline de entrenamiento.
-    
-    IMPORTANTE: Este debe coincidir exactamente con el pipeline de Airflow
-    para que las features sean compatibles con el modelo.
+    Prepara el input con las columnas necesarias antes de pasar por el pipeline.
+    Solo hace merge con productos y clientes, el resto lo hace el pipeline.
     
     Args:
-        df_input: DataFrame con columnas [customer_id, product_id, week]
-        transacciones_hist: DataFrame histórico de transacciones
+        df_input: DataFrame con columnas [customer_id, product_id, Semana, Año]
         productos_df: DataFrame de productos
         clientes_df: DataFrame de clientes
     
     Returns:
-        DataFrame preprocesado listo para predicción
+        DataFrame con merge de clientes y productos listo para el pipeline
     """
-    try:
-        df = df_input.copy()
-        
-        # 1. Merge con productos y clientes para obtener features base
-        df = df.merge(
-            productos_df[['product_id', 'category', 'brand']], 
-            on='product_id', 
-            how='left'
-        )
-        df = df.merge(
-            clientes_df[['customer_id', 'Y', 'X', 'region_id', 'zone_id', 'customer_type']], 
-            on='customer_id', 
-            how='left'
-        )
-        
-        # 2. Crear features temporales a partir de week
-        df['month'] = ((df['week'] - 1) // 4) % 12 + 1
-        df['quarter'] = ((df['week'] - 1) // 13) % 4 + 1
-        
-        # 3. Calcular frecuencias históricas
-        # Frecuencia cliente-producto
-        freq_cp = transacciones_hist.groupby(['customer_id', 'product_id']).size().reset_index(name='frequency')
-        df = df.merge(freq_cp, on=['customer_id', 'product_id'], how='left')
-        df['frequency'] = df['frequency'].fillna(0)
-        
-        # Frecuencia cliente-marca
-        trans_brand = transacciones_hist.merge(productos_df[['product_id', 'brand']], on='product_id')
-        freq_brand = trans_brand.groupby(['customer_id', 'brand']).size().reset_index(name='brand_frequency')
-        df = df.merge(freq_brand, on=['customer_id', 'brand'], how='left')
-        df['brand_frequency'] = df['brand_frequency'].fillna(0)
-        
-        # Frecuencia cliente-categoría
-        trans_cat = transacciones_hist.merge(productos_df[['product_id', 'category']], on='product_id')
-        freq_cat = trans_cat.groupby(['customer_id', 'category']).size().reset_index(name='category_frequency')
-        df = df.merge(freq_cat, on=['customer_id', 'category'], how='left')
-        df['category_frequency'] = df['category_frequency'].fillna(0)
-        
-        # 4. Geo-clustering (simplificado - idealmente cargar el KMeans entrenado)
-        from sklearn.cluster import KMeans
-        coords = df[['Y', 'X']].fillna(0)
-        if len(coords) > 0:
-            kmeans = KMeans(n_clusters=min(4, len(coords)), random_state=42, n_init=10)
-            df['geo_cluster'] = kmeans.fit_predict(coords)
-        else:
-            df['geo_cluster'] = 0
-        
-        # 5. Retornar el DataFrame completo (el pipeline aplicará las transformaciones finales)
-        return df
-        
-    except Exception as e:
-        print(f"Error en preprocesamiento: {e}")
-        raise
+    df = df_input.copy()
+    
+    # Merge con información de clientes y productos
+    df = df.merge(clientes_df, on='customer_id', how='left')
+    df = df.merge(productos_df, on='product_id', how='left')
+    
+    return df
 
 
 # ====================================================
@@ -175,7 +121,7 @@ def root():
         "mensaje": "API SodAI Drinks funcionando correctamente.",
         "version": "2.0.0",
         "modelo_cargado": model is not None,
-        "endpoints": ["/predict", "/predict_batch", "/health", "/model_info", "/latest_predictions"]
+        "endpoints": ["/predict", "/health", "/model_info", "/latest_predictions"]
     }
 
 
@@ -307,68 +253,6 @@ def predict_single(data: PredictSingleInput):
     except Exception as e:
         import traceback
         raise HTTPException(status_code=500, detail=f"Error en predicción: {str(e)}\n{traceback.format_exc()}")
-
-
-@app.post("/predict_batch")
-def predict_batch(data: PredictBatchInput):
-    """
-    Predice probabilidades para múltiples combinaciones cliente-producto
-    
-    Ejemplo:
-    {
-        "clientes": [1, 2, 3],
-        "productos": [101, 102],
-        "semana": 53
-    }
-    """
-    if model is None:
-        raise HTTPException(status_code=503, detail="Modelo no cargado")
-    
-    if transacciones is None:
-        raise HTTPException(status_code=503, detail="Datos históricos no disponibles")
-    
-    try:
-        # Determinar semana
-        semana = data.semana if data.semana else transacciones['semana'].max() + 1
-        
-        # Crear todas las combinaciones
-        combinaciones = []
-        for cliente in data.clientes:
-            for producto in data.productos:
-                combinaciones.append({
-                    'cliente_id': cliente,
-                    'producto_id': producto,
-                    'semana': semana
-                })
-        
-        df_input = pd.DataFrame(combinaciones)
-        
-        # Preprocesar
-        X = preprocesar_para_prediccion(df_input, transacciones, productos, clientes)
-        
-        # Predecir
-        y_pred = model.predict(X)
-        y_prob = model.predict_proba(X)[:, 1]
-        
-        # Formatear resultados
-        resultados = []
-        for i, row in df_input.iterrows():
-            resultados.append({
-                "cliente_id": int(row['cliente_id']),
-                "producto_id": int(row['producto_id']),
-                "semana": int(semana),
-                "prediccion": int(y_pred[i]),
-                "probabilidad_compra": float(y_prob[i])
-            })
-        
-        return {
-            "n_predicciones": len(resultados),
-            "semana": int(semana),
-            "predicciones": resultados,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en predicción batch: {str(e)}")
 
 
 @app.get("/latest_predictions")

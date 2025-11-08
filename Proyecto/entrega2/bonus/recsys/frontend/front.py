@@ -13,13 +13,47 @@ def recomendar(cliente_id, semana, top_n):
         "semana": int(semana) if semana else None,
         "top_n": int(top_n)
     }
+    def _extract_name_from_obj(obj):
+        if not obj or not isinstance(obj, dict):
+            return None
+        for k in ("nombre", "name", "product_name", "productName", "nombre_producto"):
+            if k in obj and obj[k]:
+                return obj[k]
+        return None
+
+    def _fetch_product_name_from_api(prod_id):
+        try:
+            resp = requests.get(f"{API_URL}/products/{int(prod_id)}", timeout=3)
+            if resp.status_code == 200:
+                pj = resp.json()
+                name = _extract_name_from_obj(pj)
+                if name:
+                    return name
+                # fallback: try keys that contain 'name' or 'nombre'
+                for k, v in pj.items():
+                    if isinstance(k, str) and ("name" in k.lower() or "nombre" in k.lower()):
+                        return v
+        except Exception:
+            pass
+        return None
+
     try:
         response = requests.post(f"{API_URL}/recommend", json=data)
         if response.status_code == 200:
             r = response.json()
             recomendaciones_md = []
-            for rec in r['recomendaciones']:
-                prob = rec['probabilidad_compra']
+            for rec in r.get('recomendaciones', []):
+                prod_id = rec.get('producto_id')
+                # intentar extraer nombre de la propia recomendación
+                prod_name = _extract_name_from_obj(rec)
+                # si no viene, consultar endpoint de producto
+                if not prod_name and prod_id is not None:
+                    prod_name = _fetch_product_name_from_api(prod_id)
+
+                if not prod_name:
+                    prod_name = f"Producto #{prod_id}"
+
+                prob = rec.get('probabilidad_compra', 0.0)
                 if prob >= 0.7:
                     nivel = "MUY ALTA"
                 elif prob >= 0.5:
@@ -30,37 +64,37 @@ def recomendar(cliente_id, semana, top_n):
                     nivel = "BAJA"
 
                 recomendaciones_md.append(
-                    f"### {rec['ranking']}. **Producto #{rec['producto_id']}** - {prob:.1%} ({nivel})\n"
-                    f"- **Categoría:** {rec['categoria']}\n"
-                    f"- **Marca:** {rec['marca']}\n"
-                    f"- **Sub-categoría:** {rec['sub_categoria']}\n"
-                    f"- **Segmento:** {rec['segmento']}\n"
+                    f"### {rec.get('ranking','?')}. **{prod_name} (ID: {prod_id})** - {prob:.1%} ({nivel})\n"
+                    f"- **Categoría:** {rec.get('categoria','-')}\n"
+                    f"- **Marca:** {rec.get('marca','-')}\n"
+                    f"- **Sub-categoría:** {rec.get('sub_categoria','-')}\n"
+                    f"- **Segmento:** {rec.get('segmento','-')}\n"
                 )
 
             result = f"""# **RECOMENDACIONES DE PRODUCTOS**
 
 ---
 
-## Cliente ID: **{r['cliente_id']}**
+## Cliente ID: **{r.get('cliente_id','-')}**
 
-**Semana:** {r['semana']} ({r['año']}) | **Productos evaluados:** {r['n_productos_evaluados']}
+**Semana:** {r.get('semana','-')} ({r.get('año','-')}) | **Productos evaluados:** {r.get('n_productos_evaluados','-')}
 
 ### Información del Cliente
-- **Tipo:** {r['cliente_info']['tipo']}
-- **Región:** {r['cliente_info']['region']}
-- **Zona:** {r['cliente_info']['zona']}
+- **Tipo:** {r.get('cliente_info',{}).get('tipo','-')}
+- **Región:** {r.get('cliente_info',{}).get('region','-')}
+- **Zona:** {r.get('cliente_info',{}).get('zona','-')}
 
 ---
 
-## Top {r['top_n']} Productos Recomendados
+## Top {r.get('top_n','-')} Productos Recomendados
 
 {"".join(recomendaciones_md)}
 
 ---
 
-*Timestamp: {r['timestamp']}*
+*Timestamp: {r.get('timestamp','-')}*
 
-**Interpretación:** Estos son los productos con mayor probabilidad de ser comprados por este cliente en la semana {r['semana']}.
+**Interpretación:** Estos son los productos con mayor probabilidad de ser comprados por este cliente en la semana {r.get('semana','-')}.
 """
             return result
         elif response.status_code == 404:
@@ -73,7 +107,10 @@ def recomendar(cliente_id, semana, top_n):
 Verifica que el ID del cliente sea correcto.
 """
         else:
-            error_detail = response.json().get('detail', 'Error desconocido')
+            try:
+                error_detail = response.json().get('detail', 'Error desconocido')
+            except Exception:
+                error_detail = 'Error desconocido'
             return f"""**Error generando recomendaciones**
 
 {error_detail}
