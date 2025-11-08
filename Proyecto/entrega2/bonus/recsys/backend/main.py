@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List
 import pandas as pd
 import joblib
 import os
@@ -82,6 +81,32 @@ class RecommendInput(BaseModel):
     cliente_id: int
     semana: int = None  # Si es None, usa semana actual + 1
     top_n: int = 5  # Número de recomendaciones a devolver
+
+
+# ====================================================
+# Funciones auxiliares
+# ====================================================
+
+def preparar_input_para_pipeline(df_input, productos_df, clientes_df):
+    """
+    Prepara el input con las columnas necesarias antes de pasar por el pipeline.
+    Solo hace merge con productos y clientes, el resto lo hace el pipeline.
+    
+    Args:
+        df_input: DataFrame con columnas [customer_id, product_id, Semana, Año]
+        productos_df: DataFrame de productos
+        clientes_df: DataFrame de clientes
+    
+    Returns:
+        DataFrame con merge de clientes y productos listo para el pipeline
+    """
+    df = df_input.copy()
+    
+    # Merge con información de clientes y productos
+    df = df.merge(clientes_df, on='customer_id', how='left')
+    df = df.merge(productos_df, on='product_id', how='left')
+    
+    return df
 
 
 # ====================================================
@@ -169,9 +194,8 @@ def recommend_products(data: RecommendInput):
             'Año': [año] * n_productos
         })
         
-        # Merge con información de clientes y productos
-        df_input = df_input.merge(clientes, on='customer_id', how='left')
-        df_input = df_input.merge(productos, on='product_id', how='left')
+        # Preparar input con merge de clientes y productos
+        df_input = preparar_input_para_pipeline(df_input, productos, clientes)
         
         # Aplicar pipeline de preprocesamiento
         X_transformed = pipeline_preprocessor.transform(df_input)
@@ -214,6 +238,13 @@ def recommend_products(data: RecommendInput):
         
         print(f"Recomendaciones generadas. Top producto: {recomendaciones[0]['producto_id']} ({recomendaciones[0]['probabilidad_compra']:.2%})")
         
+        # calcular fecha de inicio (lunes) de la semana ISO solicitada para mayor claridad
+        try:
+            fecha_inicio_semana = datetime.fromisocalendar(int(año), int(semana), 1).date().isoformat()
+        except Exception:
+            # fallback: no calcular si hay cualquier error
+            fecha_inicio_semana = None
+
         return {
             "cliente_id": data.cliente_id,
             "semana": int(semana),
