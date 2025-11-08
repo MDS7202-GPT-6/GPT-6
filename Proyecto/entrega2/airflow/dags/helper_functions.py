@@ -17,6 +17,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import FunctionTransformer
 from sklearn.cluster import KMeans
 from scipy.stats import ks_2samp
+from scipy.spatial.distance import jensenshannon
 
 # ====================================================
 # CONFIGURACIONES GLOBALES
@@ -52,15 +53,16 @@ def _init_mlflow():
 
 class GeoClustering(BaseEstimator, TransformerMixin):
     """Clustering geográfico basado en coordenadas X, Y"""
-    def __init__(self, n_clusters=4):
+    def __init__(self, n_clusters=4, random_state=42):
         self.n_clusters = n_clusters
         self.kmeans = None
+        self.random_state = random_state
 
     def fit(self, X, y=None):
         if "X" in X.columns and "Y" in X.columns:
             coords = X[["X", "Y"]].dropna()
             if len(coords) > 0:
-                self.kmeans = KMeans(n_clusters=self.n_clusters, random_state=42)
+                self.kmeans = KMeans(n_clusters=self.n_clusters, random_state=self.random_state, n_init=10)
                 self.kmeans.fit(coords)
         return self
 
@@ -127,7 +129,7 @@ class FeatureAggregator(BaseEstimator, TransformerMixin):
 
         # Merge para obtener compras previas
         merged = X.merge(trans, on=["customer_id", "product_id"], how="left")
-        merged = merged[merged["fecha_compra"] < merged["fecha_actual"]]
+        merged = merged[merged["fecha_compra"] <= merged["fecha_actual"]]
 
         # Frecuencia por producto
         freq = (
@@ -166,7 +168,7 @@ class FeatureAggregator(BaseEstimator, TransformerMixin):
 
 
 # ====================================================
-# 🧱 1. CARGA DE DATOS
+# 1. CARGA DE DATOS
 # ====================================================
 
 def load_data():
@@ -316,21 +318,13 @@ def preprocess_data(df_transacciones: pd.DataFrame, df_clientes: pd.DataFrame, d
         'cat_encoder': 'onehot',
         'max_depth': 14,
         'min_samples_split': 10,
-        'min_samples_leaf': 8
+        'min_samples_leaf': 7
     }
     
     # Configurar scalers y encoders
-    if best_params["num_scaler"] == "standard":
-        num_scaler = StandardScaler()
-    else:
-        num_scaler = MinMaxScaler()
-    
-    if best_params["cat_encoder"] == "onehot":
-        cat_encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-    elif best_params["cat_encoder"] == "ordinal":
-        cat_encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
-    else:
-        cat_encoder = "passthrough"
+    num_scaler = MinMaxScaler()
+
+    cat_encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
     
     numeric_pipeline = Pipeline([
         ("iqr", IQR()),
@@ -372,20 +366,47 @@ def preprocess_data(df_transacciones: pd.DataFrame, df_clientes: pd.DataFrame, d
 
 def detect_drift(df_old: pd.DataFrame, df_new: pd.DataFrame, threshold: float = 0.1) -> bool:
     """
-    Detecta drift entre datasets antiguos y nuevos usando test KS.
+    Detecta drift entre datasets antiguos y nuevos usando:
+      - KS test para numéricas
+      - Jensen-Shannon Divergence para categóricas
     """
-    p_values = []
+    metrics = []
+
     for col in df_old.columns:
-        if np.issubdtype(df_old[col].dtype, np.number):
+        # Validar que la columna existe en ambos sets
+        if col not in df_new.columns:
+            continue
+
+        # NUMÉRICAS -> KS Test
+        if df_old[col].nunique() >= 10 and df_new[col].nunique() >= 10 and np.issubdtype(df_old[col].dtype, np.number):
             try:
-                p = ks_2samp(df_old[col], df_new[col]).pvalue
-                p_values.append(p)
+                p = ks_2samp(df_old[col].dropna(), df_new[col].dropna()).pvalue
+                metrics.append(p)  
             except Exception:
                 continue
 
-    avg_p = np.mean(p_values) if len(p_values) > 0 else 1.0
-    drift = avg_p < threshold
-    print(f"Promedio p-value={avg_p:.4f} -> Drift={drift}")
+        # CATEGÓRICAS -> Jensen Shannon
+        else:
+            old_counts = df_old[col].value_counts(normalize=True)
+            new_counts = df_new[col].value_counts(normalize=True)
+
+            # Alinear categorías entre ambos dataframes
+            all_cats = sorted(set(old_counts.index) | set(new_counts.index))
+            p = np.array([old_counts.get(cat, 0) for cat in all_cats])
+            q = np.array([new_counts.get(cat, 0) for cat in all_cats])
+
+            js = jensenshannon(p, q)
+
+            # Convertimos JS a "similaridad" como si fuera p-value (1-js)
+            metrics.append(1 - js)
+
+    # Promedio de las métricas
+    avg_score = np.mean(metrics) if len(metrics) > 0 else 1.0
+
+    # Si el score promedio cae por debajo del umbral -> hay drift
+    drift = avg_score < threshold
+
+    print(f"Score promedio={avg_score:.4f} -> Drift={drift}")
     return drift
 
 
@@ -470,7 +491,7 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
             'random_state': 42
         }
 
-    print(f"🧠 Entrenando DecisionTreeClassifier con {best_params}")
+    print(f"Entrenando DecisionTreeClassifier con {best_params}")
     model = DecisionTreeClassifier(**best_params)
     model.fit(X_train, y_train)
 
@@ -478,7 +499,7 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
     f1 = f1_score(y_val, preds, average='macro')
     acc = accuracy_score(y_val, preds)
     
-    print(f"📊 Métricas de validación: F1-macro={f1:.4f}, Accuracy={acc:.4f}")
+    print(f"Métricas de validación: F1-macro={f1:.4f}, Accuracy={acc:.4f}")
 
     # --- MLflow tracking (si está disponible) ---
     if mlflow_available:
@@ -532,24 +553,24 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
                     plt.close()
                     
                     mlflow.log_artifact(shap_plot_path)
-                    print(f"✅ Gráfico SHAP guardado y logueado en MLflow: {shap_plot_path}")
+                    print(f"Gráfico SHAP guardado y logueado en MLflow: {shap_plot_path}")
                 except Exception as e:
-                    print(f"⚠️ No se pudo generar gráfico SHAP: {e}")
+                    print(f"No se pudo generar gráfico SHAP: {e}")
 
                 # Guardar modelo en MLflow
                 mlflow.sklearn.log_model(model, "model")
-                print("✅ Modelo logueado en MLflow")
+                print("Modelo logueado en MLflow")
                 
         except Exception as e:
-            print(f"⚠️ Error al loguear en MLflow: {e}")
-            print("⚠️ Continuando sin MLflow tracking...")
+            print(f"Error al loguear en MLflow: {e}")
+            print("Continuando sin MLflow tracking...")
     
     # Guardar modelo localmente (siempre, independiente de MLflow)
     model_path = os.path.join(MODEL_PATH, f"modelo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl")
     joblib.dump(model, model_path)
-    print(f"💾 Modelo guardado localmente en: {model_path}")
+    print(f"Modelo guardado localmente en: {model_path}")
 
-    print(f"✅ Entrenamiento completado | F1-macro={f1:.4f} | ACC={acc:.4f}")
+    print(f"Entrenamiento completado | F1-macro={f1:.4f} | ACC={acc:.4f}")
     return model
 
 
@@ -569,6 +590,6 @@ def predict_future_week(model, df_features: pd.DataFrame):
 
     out_path = os.path.join(PRED_PATH, f"predicciones_{datetime.now().strftime('%Y%m%d')}.parquet")
     df_pred.to_parquet(out_path, index=False)
-    print(f"📤 Predicciones guardadas en {out_path}")
+    print(f"Predicciones guardadas en {out_path}")
 
     return df_pred
