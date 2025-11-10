@@ -304,6 +304,8 @@ result = trans_prod[['product_id', 'brand', 'category', 'items']].to_string()
 7. Para preguntas simples (saludos, agradecimientos), responde directamente sin código.
 
 8. Sé conciso y preciso. Los usuarios esperan respuestas basadas en datos reales.
+
+9. RECUERDA USAR SIEMPRE BLOQUES DE CÓDIGO PARA CONSULTAS DE DATOS. (usa comilas triples para poder formatear correctamente el códigos)
 """
         
         # Construir mensajes
@@ -349,10 +351,11 @@ result = trans_prod[['product_id', 'brand', 'category', 'items']].to_string()
             
             print(f"[🔄 PREPARANDO SEGUNDA LLAMADA AL LLM CON LOS RESULTADOS...]")
             
-            messages.append({"role": "assistant", "content": assistant_message})
+            # NO agregamos el mensaje con código al historial temporal
+            # Solo pasamos los resultados para que genere una respuesta natural
             messages.append({
                 "role": "user", 
-                "content": f"Los resultados de las queries son:\n\n{results_text}\n\nAhora responde la pregunta original de forma natural y clara, usando estos resultados."
+                "content": f"Basándote en la pregunta original: '{data.message}'\n\nY estos resultados de análisis:\n\n{results_text}\n\nResponde de forma natural y clara."
             })
             
             # Segunda llamada para respuesta final
