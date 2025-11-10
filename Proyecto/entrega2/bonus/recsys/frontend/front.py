@@ -21,22 +21,6 @@ def recomendar(cliente_id, semana, top_n):
                 return obj[k]
         return None
 
-    def _fetch_product_name_from_api(prod_id):
-        try:
-            resp = requests.get(f"{API_URL}/products/{int(prod_id)}", timeout=3)
-            if resp.status_code == 200:
-                pj = resp.json()
-                name = _extract_name_from_obj(pj)
-                if name:
-                    return name
-                # fallback: try keys that contain 'name' or 'nombre'
-                for k, v in pj.items():
-                    if isinstance(k, str) and ("name" in k.lower() or "nombre" in k.lower()):
-                        return v
-        except Exception:
-            pass
-        return None
-
     try:
         response = requests.post(f"{API_URL}/recommend", json=data)
         if response.status_code == 200:
@@ -44,14 +28,8 @@ def recomendar(cliente_id, semana, top_n):
             recomendaciones_md = []
             for rec in r.get('recomendaciones', []):
                 prod_id = rec.get('producto_id')
-                # intentar extraer nombre de la propia recomendación
-                prod_name = _extract_name_from_obj(rec)
-                # si no viene, consultar endpoint de producto
-                if not prod_name and prod_id is not None:
-                    prod_name = _fetch_product_name_from_api(prod_id)
-
-                if not prod_name:
-                    prod_name = f"Producto #{prod_id}"
+                # Usar ID del producto como nombre
+                prod_name = f"Producto #{prod_id}"
 
                 prob = rec.get('probabilidad_compra', 0.0)
                 if prob >= 0.7:
