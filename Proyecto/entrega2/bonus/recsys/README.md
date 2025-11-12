@@ -146,6 +146,7 @@ Desde Swagger UI puedes probar todos los endpoints directamente desde el navegad
 recsys/
 ├── backend/
 │   ├── main.py              # API FastAPI con endpoint /recommend
+│   ├── helper_functions.py  # Funciones ML y transformers
 │   ├── Dockerfile
 │   └── requirements.txt
 │

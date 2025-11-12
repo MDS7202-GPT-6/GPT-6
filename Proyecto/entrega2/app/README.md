@@ -141,6 +141,7 @@ Desde Swagger UI puedes probar todos los endpoints directamente desde el navegad
 app/
 ├── backend/
 │   ├── main.py              # API FastAPI con 5 endpoints
+│   ├── helper_functions.py  # Funciones ML y transformers
 │   ├── Dockerfile
 │   └── requirements.txt
 │
