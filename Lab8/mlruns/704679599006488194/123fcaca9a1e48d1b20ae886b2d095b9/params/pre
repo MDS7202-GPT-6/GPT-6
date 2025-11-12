@@ -1,7 +1,0 @@
-ColumnTransformer(transformers=[('num',
-                                 Pipeline(steps=[('imputer',
-                                                  SimpleImputer(strategy='median')),
-                                                 ('scaler', StandardScaler())]),
-                                 Index(['ph', 'Hardness', 'Solids', 'Chloramines', 'Sulfate', 'Conductivity',
-       'Organic_carbon', 'Trihalomethanes', 'Turbidity'],
-      dtype='object'))])
