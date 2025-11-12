@@ -1,0 +1,28 @@
+artifact_path: file:///Users/matiasgodoy/Universidad/2025-2/Lab MDS/GPT-6/mlruns/704679599006488194/models/m-aba4863780f14a11b37dc87946a1a99e/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.12.6
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.7.2
+is_signature_from_type_hint: false
+mlflow_version: 3.5.0
+model_id: m-aba4863780f14a11b37dc87946a1a99e
+model_size_bytes: 126799
+model_uuid: m-aba4863780f14a11b37dc87946a1a99e
+prompts: null
+run_id: 6b07dd475db349148049ee6b911ad704
+signature:
+  inputs: '[{"type": "tensor", "tensor-spec": {"dtype": "float64", "shape": [-1, 9]}}]'
+  outputs: '[{"type": "tensor", "tensor-spec": {"dtype": "float64", "shape": [-1]}}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2025-10-19 12:41:23.664162'

@@ -1,0 +1,10 @@
+artifact_location: file:///Users/delaneytello/Desktop/Laboratorio_ciencia_datos/GPT-6/Lab8/mlruns/138044535354841993/models/m-a8eb939331d44fcca47d035808c3be9c/artifacts
+creation_timestamp: 1761014314971
+experiment_id: '138044535354841993'
+last_updated_timestamp: 1761014317417
+model_id: m-a8eb939331d44fcca47d035808c3be9c
+model_type: null
+name: model
+source_run_id: 58251709a0984a7baaf0065c6578c7ed
+status: 2
+status_message: null

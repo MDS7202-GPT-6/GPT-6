@@ -1,0 +1,8 @@
+apache-airflow==2.9.3
+pandas
+scikit-learn
+joblib
+gradio
+virtualenv
+requests
+gunicorn
