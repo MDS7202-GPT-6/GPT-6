@@ -58,7 +58,7 @@ Desde el directorio `llm/`:
 docker compose up --build
 ```
 
-Esto iniciará dos contenedores:
+Esto iniciará un contenedor con:
 - **llm_backend**: API FastAPI en puerto 8002
 - **llm_frontend**: Interfaz Gradio en puerto 7862
 
