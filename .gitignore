@@ -13,10 +13,11 @@ __pycache__/
 
 # Virtual environments
 venv/
-env/
+.env/
 ENV/
 .venv/
 .pyenv/
+.env
 
 # pip/misc
 pip-wheel-metadata/
