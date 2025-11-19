@@ -4,7 +4,7 @@
 
 MLflow transformó la experimentación al registrar automáticamente cada run de Optuna con sus métricas, hiperparámetros y artefactos. Esto permitió reproducibilidad completa y comparación visual de modelos, algo que era caótico en la Entrega 1.
 
-Por su parte, Airflow ayuda a visualizar correctamente la ejecución del pipeline, facilitando la identificación de fallos y cuellos de botella. Consideramos que esta es una de las herramientas más valiosas del curso.
+Por su parte, Airflow ayuda a visualizar correctamente la ejecución del pipeline, facilitando la identificación de fallos y cuellos de botella. Consideramos que esta es una de las herramientas más útiles del curso.
 
 Docker, por otro lado, simplificó enormemente el despliegue. Al contenerizar la aplicación con FastAPI y Gradio, garantizamos que el entorno de producción fuera idéntico al de desarrollo, eliminando problemas de dependencias y versiones. Además, la orquestación con Docker Compose permitió levantar todo el stack (Airflow, MLflow, backend, frontend) con un solo comando. Creemos con firmeza que esto ha sido lo más valioso a aprender en el curso, ya que se que esto se usa en la industria.
 
@@ -12,7 +12,7 @@ Docker, por otro lado, simplificó enormemente el despliegue. Al contenerizar la
 
 El mayor desafío fue integrar el pipeline de preprocesamiento. El `pipeline_pp.pkl` guardado por Airflow contenía referencias a clases custom que inicialmente no existían en el contenedor del backend. 
 
-Lo más interesante fue implementar la predicción en tiempo real con FastAP  y manejo eficiente de concurrencia. La documentación automática con Swagger facilitó la prueba de endpoints. Creemos que conocer aunque sea superficialmente FastAPI es muy valioso, ya que es una de las herramientas más usadas en la industria para levantar modelos ML.
+Lo más interesante fue implementar la predicción en tiempo real con FastAPI y manejo eficiente de concurrencia. La documentación automática con Swagger facilitó la prueba de endpoints. Creemos que conocer aunque sea superficialmente FastAPI es muy útil para nuestro futuro profesional, ya que es una de las herramientas más usadas en la industria para levantar modelos ML.
 
 ## ¿Cómo aporta Airflow a la robustez y escalabilidad del pipeline?
 
@@ -20,11 +20,11 @@ Airflow proporciona robustez mediante retries automáticos, flujos condicionales
 
 En escalabilidad, Airflow permite paralelización de tareas independientes y scheduling flexible. Su capacidad de integrarse con clusters (Spark, Kubernetes) significa que si nuestros datos crecen a millones de registros, podemos migrar el preprocesamiento a Spark sin cambiar la estructura del DAG. La UI web ofrece monitoreo en tiempo real y una revisión completa del historial de ejecuciones.
 
-## ¿Qué se podría mejorar en una versión futura del flujo?
+## ¿Qué se podría mejorar en una versión futura del flujo? ¿Qué partes automatizarían más, qué monitorearían o qué métricas agregarían?
 
 Para futuras versiones, sería valioso poder ejecutar más entrenamientos en paralelo, pudiendo monitorear múltiples experimentos simultáneamente. 
 
-Otra mejora podría ser que se quede constantemente ejecutando el pipeline en un servidor esperando un drift, para no tener que estar ejecutándolo manualmente cada vez y que al momento de detectar drift se ejecute automáticamente.
+Otra mejora podría ser que se quede constantemente ejecutando el pipeline en un servidor esperando un drift, para no tener que estar ejecutándolo manualmente cada vez o tenerlo programado cada cierta cantidad de días, y que al momento de detectar drift se ejecute automáticamente. De esta forma se tendría un sistema más autónomo/automatizado.
 
 ## Reflexión Final
 

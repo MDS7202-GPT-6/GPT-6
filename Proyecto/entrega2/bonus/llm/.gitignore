@@ -1,6 +1,6 @@
 # Environment variables (NUNCA subir al repositorio)
 .env
-
+!.env.example
 # Python
 __pycache__/
 *.py[cod]
