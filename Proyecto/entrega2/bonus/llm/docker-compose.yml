@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: llm_backend
+    ports:
+      - "8002:8002"
+    volumes:
+      - ../../airflow/data/raw:/app/data:ro
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - llm_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: llm_frontend
+    ports:
+      - "7862:7862"
+    depends_on:
+      - backend
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - llm_network
+
+networks:
+  llm_network:
+    driver: bridge
