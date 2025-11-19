@@ -12,9 +12,7 @@ from helper_functions import (
     predict_future_week
 )
 
-# ====================================================
-# ⚙️ CONFIGURACIÓN DEL DAG
-# ====================================================
+
 
 default_args = {
     "owner": "airflow",
@@ -36,9 +34,7 @@ with DAG(
     tags=["mlops", "decisiontree", "optuna", "mlflow"],
 ) as dag:
 
-    # ====================================================
-    # 🧱 1️⃣ INGESTA DE DATOS
-    # ====================================================
+
 
     def task_ingesta(**context):
         df_transacciones, df_clientes, df_productos = load_data()
@@ -53,9 +49,6 @@ with DAG(
     )
 
 
-    # ====================================================
-    # 🧹 2️⃣ PREPROCESAMIENTO
-    # ====================================================
 
     def task_preprocesar(**context):
         import pandas as pd
@@ -88,36 +81,42 @@ with DAG(
     )
 
 
-    # ====================================================
-    # ⚖️ 3️⃣ DETECCIÓN DE DRIFT
-    # ====================================================
-
     def task_detectar_drift(**context):
         import pandas as pd
-        
-        # 1. Verificar si existe un modelo previo
-        model_dir = "/opt/airflow/data/models"
-        os.makedirs(model_dir, exist_ok=True)
-        modelos = [f for f in os.listdir(model_dir) if f.endswith(".pkl") and not f.startswith("pipeline")]
-        
-        if not modelos:
-            print("⚠️ No existe modelo previo → REENTRENAR")
-            return "reentrenar_modelo"
-        
-        # 2. Si existe modelo, detectar drift
-        print(f"✅ Modelo previo encontrado ({len(modelos)} modelos) → Detectando drift...")
-        df_old = pd.read_json(context["ti"].xcom_pull(task_ids="ingestar_datos", key="df_transacciones"))
-        df_new = df_old.copy()
+        import os
 
-        drift = detect_drift(df_old[["customer_id", "product_id"]], 
-                           df_new[["customer_id", "product_id"]], 
-                           threshold=0.1)
-        
+        # Carpeta donde guardas el snapshot OLD
+        old_dir = "/opt/airflow/data/raw_old"
+        new_dir = "/opt/airflow/data/raw"   # la carpeta normal raw
+
+        os.makedirs(old_dir, exist_ok=True)
+
+        # Cargar new
+        df_new = pd.read_json(context["ti"].xcom_pull(task_ids="ingestar_datos",
+                                                    key="df_transacciones"))
+
+        # Si no existe snapshot → primera corrida
+        old_path = os.path.join(old_dir, "df_transacciones_old.parquet")
+        if not os.path.exists(old_path):
+            print("⚠️ No existe raw_old → primera ejecución → reentrenar")
+            return "reentrenar_modelo"
+
+        # Cargar old
+        df_old = pd.read_parquet(old_path)
+
+        print("Comparando raw_old vs raw...")
+
+        drift = detect_drift(
+            df_old[["customer_id","product_id","purchase_date","items"]],
+            df_new[["customer_id","product_id","purchase_date","items"]],
+            threshold=0.1
+        )
+
         if drift:
-            print("🔴 DRIFT DETECTADO → REENTRENAR")
+            print("🔴 Drift detectado → reentrenar")
             return "reentrenar_modelo"
         else:
-            print("🟢 NO HAY DRIFT → USAR MODELO EXISTENTE")
+            print("🟢 No drift → usar modelo existente")
             return "usar_modelo_existente"
 
     detectar_drift_task = BranchPythonOperator(
@@ -127,13 +126,12 @@ with DAG(
     )
 
 
-    # ====================================================
-    # 🧠 4️⃣ REENTRENAMIENTO (si hay drift o no existe modelo)
-    # ====================================================
+
 
     def task_reentrenar(**context):
         import numpy as np
         import os
+        import pandas as pd
         
         # Cargar datos transformados
         X_train = np.load('/tmp/X_train.npy', allow_pickle=True)
@@ -162,6 +160,13 @@ with DAG(
         
         print(f"✅ Modelo guardado en: {model_path}")
 
+        df_new = pd.read_json(context["ti"].xcom_pull(task_ids="ingestar_datos",
+                                               key="df_transacciones"))
+
+        snapshot_path = "/opt/airflow/data/raw_old/df_transacciones_old.parquet"
+        df_new.to_parquet(snapshot_path)
+        print(f"📦 Snapshot OLD actualizado en: {snapshot_path}")
+
     reentrenar_task = PythonOperator(
         task_id="reentrenar_modelo",
         python_callable=task_reentrenar,
@@ -169,9 +174,6 @@ with DAG(
     )
 
 
-    # ====================================================
-    # 🧰 5️⃣ USAR MODELO EXISTENTE (si NO hay drift)
-    # ====================================================
 
     def task_usar_modelo_existente(**context):
         """
@@ -192,9 +194,6 @@ with DAG(
     )
 
 
-    # ====================================================
-    # 📈 6️⃣ GENERACIÓN DE PREDICCIONES
-    # ====================================================
 
     def task_predecir(**context):
         import numpy as np
@@ -278,16 +277,12 @@ with DAG(
     )
 
 
-    # ====================================================
-    # ✅ 7️⃣ FINALIZAR PIPELINE
-    # ====================================================
+
 
     fin_ok = EmptyOperator(task_id="fin_pipeline")
 
 
-    # ====================================================
-    # 🔗 DEPENDENCIAS
-    # ====================================================
+
 
     (
         ingesta_task
