@@ -108,6 +108,23 @@ MLFLOW_TRACKING_URI = "http://mlflow:5001"
 MLFLOW_EXPERIMENT = "modelo_tiendas_ancla"
 ```
 
+## Archivo `.env` (variables de entorno)
+
+El proyecto espera estas variables en `.env` (valores de ejemplo):
+
+```
+# Usuario y contraseña de Airflow Web UI
+_AIRFLOW_WWW_USER_USERNAME=airflow
+_AIRFLOW_WWW_USER_PASSWORD=airflow
+
+# UID para permisos de archivos
+AIRFLOW_UID=501
+
+# MLflow
+MLFLOW_TRACKING_URI=http://mlflow:5000
+```
+
+
 ## Ejecución
 
 ### Paso 1: Levantar servicios
