@@ -1,0 +1,15 @@
+artifact_uri: file:///mlflow/mlartifacts/424562981419560646/5ebec0dcdb3549d98675b170d2a3e12e/artifacts
+end_time: 1764616619457
+entry_point_name: ''
+experiment_id: '424562981419560646'
+lifecycle_stage: active
+run_id: 5ebec0dcdb3549d98675b170d2a3e12e
+run_name: XGBoost_20251201_1916
+run_uuid: 5ebec0dcdb3549d98675b170d2a3e12e
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1764616618363
+status: 3
+tags: []
+user_id: airflow

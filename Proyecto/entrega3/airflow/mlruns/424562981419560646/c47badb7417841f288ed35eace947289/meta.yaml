@@ -1,0 +1,15 @@
+artifact_uri: file:///mlflow/mlartifacts/424562981419560646/c47badb7417841f288ed35eace947289/artifacts
+end_time: 1764619972332
+entry_point_name: ''
+experiment_id: '424562981419560646'
+lifecycle_stage: active
+run_id: c47badb7417841f288ed35eace947289
+run_name: LightGBM_20251201_2012
+run_uuid: c47badb7417841f288ed35eace947289
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1764619970885
+status: 3
+tags: []
+user_id: airflow

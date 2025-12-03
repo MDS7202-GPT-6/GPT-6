@@ -1,0 +1,15 @@
+artifact_uri: file:///mlflow/mlartifacts/424562981419560646/1ff47cdf063e4aa7b7056b1c14a897ed/artifacts
+end_time: 1764619026359
+entry_point_name: ''
+experiment_id: '424562981419560646'
+lifecycle_stage: active
+run_id: 1ff47cdf063e4aa7b7056b1c14a897ed
+run_name: DecisionTree_20251201_1957
+run_uuid: 1ff47cdf063e4aa7b7056b1c14a897ed
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1764619024810
+status: 3
+tags: []
+user_id: airflow

@@ -1,0 +1,15 @@
+artifact_uri: file:///mlflow/mlartifacts/424562981419560646/f2b9cdf017844cc493c8445a0d7faec1/artifacts
+end_time: 1764617384265
+entry_point_name: ''
+experiment_id: '424562981419560646'
+lifecycle_stage: active
+run_id: f2b9cdf017844cc493c8445a0d7faec1
+run_name: LogisticRegression_20251201_1929
+run_uuid: f2b9cdf017844cc493c8445a0d7faec1
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1764617383177
+status: 3
+tags: []
+user_id: airflow
