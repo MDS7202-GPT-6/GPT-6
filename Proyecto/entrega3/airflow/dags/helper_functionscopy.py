@@ -19,6 +19,39 @@ from sklearn.cluster import KMeans
 from scipy.stats import ks_2samp
 from scipy.spatial.distance import jensenshannon
 
+def get_feature_names_from_pipeline(pp: Pipeline):
+    """
+    Extrae los nombres reales de features del Pipeline completo.
+    Funciona con ColumnTransformer + OneHotEncoder + pipelines anidadas.
+    """
+
+    # Último step: ColumnTransformer
+    ct = pp.named_steps["preprocessing"]
+    output_names = []
+
+    for name, transformer, columns in ct.transformers_:
+        if name == "remainder":
+            continue
+
+        # obtener el estimador final dentro del pipeline (si hay pipeline)
+        if isinstance(transformer, Pipeline):
+            last = transformer.steps[-1][1]
+        else:
+            last = transformer
+
+        if hasattr(last, 'get_feature_names_out'):
+            # Ej: OneHotEncoder
+            try:
+                names = last.get_feature_names_out(columns)
+            except:
+                names = columns
+        else:
+            names = columns
+
+        output_names.extend(names)
+
+    return output_names
+
 # ====================================================
 # CONFIGURACIONES GLOBALES
 # ====================================================
@@ -468,16 +501,21 @@ import numpy as np
 import pandas as pd
 import joblib
 import mlflow
+import matplotlib.pyplot as plt
+from datetime import datetime
 
 def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
     """
-    Entrena DecisionTreeClassifier y muestra métricas detalladas en consola.
+    Entrena DecisionTreeClassifier, obtiene nombres reales de features del pipeline,
+    calcula métricas, SHAP y guarda el modelo.
     """
 
     # Inicializar MLflow si está disponible
     mlflow_available = _init_mlflow()
 
-    # Hiperparámetros
+    # ---------------------------------------------------
+    # Elegir hiperparámetros (Optuna o predefinidos)
+    # ---------------------------------------------------
     if optimize:
         print("\n🎯 Optimizando hiperparámetros con Optuna…")
         best_params = optimize_with_optuna(X_train, X_val, y_train, y_val)
@@ -495,12 +533,67 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
     print("==============================")
     print(best_params)
 
+    # ---------------------------------------------------
+    # Entrenar modelo
+    # ---------------------------------------------------
     model = DecisionTreeClassifier(**best_params)
     model.fit(X_train, y_train)
 
-    # ============================
+    # ---------------------------------------------------
+    # 📌 Obtener nombres reales de features desde pipeline
+    # ---------------------------------------------------
+    print("\n==============================")
+    print("📌 OBTENIENDO NOMBRES DE FEATURES")
+    print("==============================")
+
+    try:
+        pipeline_pp = joblib.load('/tmp/pipeline_pp.pkl')
+        feature_names = get_feature_names_from_pipeline(pipeline_pp)
+
+        print(f"✔️ Se obtuvieron {len(feature_names)} features reales:")
+        for i, name in enumerate(feature_names[:40]):  # mostrar primeros 40
+            print(f"{i}: {name}")
+
+    except Exception as e:
+        print(f"⚠️ No se pudieron obtener los nombres reales de features: {e}")
+        feature_names = [f"Feature_{i}" for i in range(X_train.shape[1])]
+
+    # ---------------------------------------------------
+    # 📈 SHAP Values
+    # ---------------------------------------------------
+    print("\n==============================")
+    print("📊 CALCULANDO SHAP VALUES")
+    print("==============================")
+
+    try:
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X_train)
+
+        # SHAP devuelve lista → tomar solo la clase positiva
+        shap_values_class1 = shap_values[1]
+
+        # Convertir X_train a DataFrame para que tenga nombres
+        X_df = pd.DataFrame(X_train, columns=feature_names)
+
+        # Beeswarm plot
+        shap.summary_plot(
+            shap_values_class1,
+            X_df,
+            plot_type="dot",   # 🟢 ahora sí funciona
+            show=False
+        )
+
+        plt.savefig("/opt/airflow/data/models/shap_beeswarm.png")
+        plt.close()
+
+        print("✔️ SHAP beeswarm guardado como shap_beeswarm.png")
+
+    except Exception as e:
+        print(f"⚠️ Error al calcular SHAP: {e}")
+
+    # ---------------------------------------------------
     # 🔍 PREDICCIONES VALIDACIÓN
-    # ============================
+    # ---------------------------------------------------
     print("\n==============================")
     print("📊 MÉTRICAS VALIDACIÓN (VAL)")
     print("==============================")
@@ -534,9 +627,9 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
     print(f"Positivos reales:   {y_val.mean():.4f}")
     print(f"Positivos predichos:{y_pred.mean():.4f}")
 
-    # ============================
-    # 🔍 PREDICCIONES TRAIN (opcional)
-    # ============================
+    # ---------------------------------------------------
+    # 🔍 MÉTRICAS TRAIN
+    # ---------------------------------------------------
     print("\n==============================")
     print("📊 MÉTRICAS TRAIN BALANCEADO")
     print("==============================")
@@ -549,9 +642,9 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
     print("\n--- Matriz de confusión (TRAIN) ---")
     print(confusion_matrix(y_train, train_pred))
 
-    # ============================
-    # 🔍 MLflow
-    # ============================
+    # ---------------------------------------------------
+    # MLflow
+    # ---------------------------------------------------
     if mlflow_available:
         try:
             with mlflow.start_run(run_name=f"DecisionTree_{datetime.now().strftime('%Y%m%d_%H%M')}"):
@@ -562,14 +655,17 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
                 mlflow.log_metric("val_recall", rec)
                 mlflow.log_metric("val_f1", f1)
 
-                # Clasificación por clase
+                # Métricas por clase
                 rep = classification_report(y_val, y_pred, output_dict=True)
                 for label in ["0", "1"]:
                     mlflow.log_metric(f"precision_class_{label}", rep[label]["precision"])
                     mlflow.log_metric(f"recall_class_{label}", rep[label]["recall"])
                     mlflow.log_metric(f"f1_class_{label}", rep[label]["f1-score"])
 
-                # Guardar modelo en MLflow
+                # Guardar figure SHAP
+                mlflow.log_artifact("/opt/airflow/data/models/shap_summary.png")
+
+                # Guardar modelo
                 mlflow.sklearn.log_model(model, "model")
 
                 print("\n📦 Modelo logueado en MLflow.")
@@ -577,9 +673,9 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
         except Exception as e:
             print(f"⚠️ Error al loguear MLflow: {e}")
 
-    # ============================
-    # 💾 GUARDAR MODELO LOCAL
-    # ============================
+    # ---------------------------------------------------
+    # 💾 Guardar modelo local
+    # ---------------------------------------------------
     model_path = os.path.join(MODEL_PATH, f"modelo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl")
     joblib.dump(model, model_path)
     print(f"\n💾 Modelo guardado en: {model_path}")
