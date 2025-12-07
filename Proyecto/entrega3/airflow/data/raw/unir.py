@@ -3,7 +3,7 @@ import os
 
 # Nombre de archivos
 ARCHIVO_BASE = "transacciones.parquet"
-ARCHIVO_BATCH = "batch_t1.parquet"
+ARCHIVO_BATCH = "batch_t3.parquet"
 
 def main():
     # Obtener carpeta del script
