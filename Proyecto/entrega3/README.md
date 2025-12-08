@@ -1,24 +1,48 @@
-# Entrega3 - Contenedor para predicciones
+# Entrega 3 — Orquestación y predicción (resumen)
 
-Este contenedor reproduce el entorno de `entrega2` (mismas versiones de librerías)
-para evitar problemas de deserialización (pickles) entre versiones de Python / scikit-learn / joblib.
+Este repositorio contiene la entrega 3 del proyecto: un pipeline orquestado con Apache Airflow que realiza ingesta, preprocesado, (re)entrenamiento y generación de predicciones. En esta entrega se utiliza la copia del pipeline llamada "pipeline copy" y su identificador en Airflow es `pipeline_modelo_previo`.
 
-Build:
+Importante: para evitar confusiones solo debe levantarse el `docker-compose.yml` que está dentro de `entrega3/airflow/`.
+
+Contenido relevante de `entrega3/`
+--------------------------------
+- `airflow/` : DAGs, configuración y `docker-compose.yml` para ejecutar Airflow.
+- `data/models/` : modelos guardados (.pkl) y el pipeline de preprocesado (`pipeline_pp.pkl`).
+- `predictions/` : resultados (predicciones) generadas por modelos que resultaron ser incorrectos (explicado en enunciado_entrega3.ipynb).
+- `predictions-Previo/` : predicciones generadas por el modelo previo (el `pipeline_modelo_previo`) y que muestran resultados más correctos; usar como referencia para evaluación.
+
+Cómo levantar el entorno Docker (usar solo el compose dentro de `airflow/`)
+--------------------------------------------------------------------
+1. Sitúate en la carpeta del compose de Airflow:
 
 ```bash
-docker build -t entrega3-predictor:latest Proyecto/entrega3
+cd Proyecto/entrega3/airflow
 ```
 
-Ejecución (montar los directorios de `models` y `raw` desde `entrega2`):
+2. Construir (si es necesario) y levantar los servicios en segundo plano:
 
 ```bash
-docker run --rm \
-  -v /full/path/to/Proyecto/entrega2/airflow/data/models:/data/models:ro \
-  -v /full/path/to/Proyecto/entrega2/airflow/data/raw:/data/raw:ro \
-  -v /full/path/to/Proyecto/entrega3/predictions:/app/Proyecto/entrega3/predictions \
-  entrega3-predictor:latest
+docker compose build
+docker compose up -d
 ```
 
-Notas:
-- Si prefieres pasar rutas personalizadas para `PIPELINE_PATH`, `MODELS_DIR`, `RAW_DIR` o `OUT_DIR`, exporta variables de entorno o pásalas con `-e` al `docker run`.
-- Este contenedor usa `python:3.10-slim` para reproducir el entorno y evitar errores como "TypeError: code() argument 13 must be str, not int".
+3. Verificar que los servicios estén arriba:
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+4. UIs comunes:
+- Airflow: http://localhost:8080
+
+
+Pipeline utilizado
+------------------
+- Nombre en el repositorio: copia "pipeline copy".
+- DAG en Airflow: `pipeline_modelo_previo` (es la que debe ejecutarse para reproducir los resultados del modelo previo).
+
+Explicación de `predictions/` vs `predictions-Previo/`
+----------------------------------------------------
+- `predictions/` contiene los resultados (archivos de salida) generados por versiones del/los modelos que terminaron siendo erróneos o con peor desempeño. Sirven para análisis de fallos y debugging.
+- `predictions-Previo/` contiene las salidas del modelo entrenado previamente (el que corresponde a `pipeline_modelo_previo`) y que presenta resultados más correctos; esta carpeta es la referencia para evaluación y comparaciones.
