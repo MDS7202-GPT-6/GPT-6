@@ -62,8 +62,6 @@ PRED_PATH = os.path.join(DATA_PATH, "predictions")
 MLFLOW_TRACKING_URI = "http://mlflow:5001"
 MLFLOW_EXPERIMENT = "modelo_tiendas_ancla"
 
-# No ejecutar código de MLflow aquí (nivel superior)
-# Se inicializará dentro de cada función que lo necesite
 
 
 def _init_mlflow():
@@ -80,9 +78,6 @@ def _init_mlflow():
         return False
 
 
-# ====================================================
-# CLASES TRANSFORMADORAS PERSONALIZADAS
-# ====================================================
 
 class GeoClustering(BaseEstimator, TransformerMixin):
     """Clustering geográfico basado en coordenadas X, Y"""
@@ -200,9 +195,7 @@ class FeatureAggregator(BaseEstimator, TransformerMixin):
         return X
 
 
-# ====================================================
-# 1. CARGA DE DATOS
-# ====================================================
+
 
 def load_data():
     """
@@ -228,9 +221,7 @@ def load_data():
     return df_transacciones, df_clientes, df_productos
 
 
-# ====================================================
-# 2. LIMPIEZA Y TRANSFORMACIÓN
-# ====================================================
+
 
 def preprocess_data(df_transacciones: pd.DataFrame, df_clientes: pd.DataFrame, df_productos: pd.DataFrame):
     """
@@ -517,10 +508,10 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
     # Elegir hiperparámetros (Optuna o predefinidos)
     # ---------------------------------------------------
     if optimize:
-        print("\n🎯 Optimizando hiperparámetros con Optuna…")
+        print("\n Optimizando hiperparámetros con Optuna…")
         best_params = optimize_with_optuna(X_train, X_val, y_train, y_val)
     else:
-        print("\n♻️ Reentrenamiento → Usando hiperparámetros predefinidos")
+        print("\n Reentrenamiento → Usando hiperparámetros predefinidos")
         best_params = {
             'max_depth': 14,
             'min_samples_split': 10,
@@ -529,7 +520,7 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
         }
 
     print("\n==============================")
-    print("🧠 ENTRENANDO MODELO")
+    print(" ENTRENANDO MODELO")
     print("==============================")
     print(best_params)
 
@@ -540,10 +531,10 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
     model.fit(X_train, y_train)
 
     # ---------------------------------------------------
-    # 📌 Obtener nombres reales de features desde pipeline
+    #  Obtener nombres reales de features desde pipeline
     # ---------------------------------------------------
     print("\n==============================")
-    print("📌 OBTENIENDO NOMBRES DE FEATURES")
+    print(" OBTENIENDO NOMBRES DE FEATURES")
     print("==============================")
 
     try:
@@ -555,14 +546,14 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
             print(f"{i}: {name}")
 
     except Exception as e:
-        print(f"⚠️ No se pudieron obtener los nombres reales de features: {e}")
+        print(f" No se pudieron obtener los nombres reales de features: {e}")
         feature_names = [f"Feature_{i}" for i in range(X_train.shape[1])]
 
     # ---------------------------------------------------
     # 📈 SHAP Values
     # ---------------------------------------------------
     print("\n==============================")
-    print("📊 CALCULANDO SHAP VALUES")
+    print(" CALCULANDO SHAP VALUES")
     print("==============================")
 
     try:
@@ -579,7 +570,7 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
         shap.summary_plot(
             shap_values_class1,
             X_df,
-            plot_type="dot",   # 🟢 ahora sí funciona
+            plot_type="dot",   
             show=False
         )
 
@@ -595,7 +586,7 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
     # 🔍 PREDICCIONES VALIDACIÓN
     # ---------------------------------------------------
     print("\n==============================")
-    print("📊 MÉTRICAS VALIDACIÓN (VAL)")
+    print("MÉTRICAS VALIDACIÓN (VAL)")
     print("==============================")
 
     y_pred = model.predict(X_val)
@@ -631,7 +622,7 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
     # 🔍 MÉTRICAS TRAIN
     # ---------------------------------------------------
     print("\n==============================")
-    print("📊 MÉTRICAS TRAIN BALANCEADO")
+    print("MÉTRICAS TRAIN BALANCEADO")
     print("==============================")
 
     train_pred = model.predict(X_train)
@@ -668,27 +659,27 @@ def train_and_log_model(X_train, X_val, y_train, y_val, optimize=False):
                 # Guardar modelo
                 mlflow.sklearn.log_model(model, "model")
 
-                print("\n📦 Modelo logueado en MLflow.")
+                print("\n Modelo logueado en MLflow.")
 
         except Exception as e:
-            print(f"⚠️ Error al loguear MLflow: {e}")
+            print(f" Error al loguear MLflow: {e}")
 
     # ---------------------------------------------------
-    # 💾 Guardar modelo local
+    #  Guardar modelo local
     # ---------------------------------------------------
     model_path = os.path.join(MODEL_PATH, f"modelo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl")
     joblib.dump(model, model_path)
-    print(f"\n💾 Modelo guardado en: {model_path}")
+    print(f"\n Modelo guardado en: {model_path}")
 
     print("\n==============================")
-    print(f"🏁 Entrenamiento completado | F1_val={f1:.4f} | ACC_val={acc:.4f}")
+    print(f" Entrenamiento completado | F1_val={f1:.4f} | ACC_val={acc:.4f}")
     print("==============================\n")
 
     return model
 
 
 # ====================================================
-# 📈 5. GENERACIÓN DE PREDICCIONES
+#  5. GENERACIÓN DE PREDICCIONES
 # ====================================================
 
 def predict_future_week(model, df_features: pd.DataFrame):

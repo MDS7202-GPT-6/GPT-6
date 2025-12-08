@@ -72,7 +72,7 @@ with DAG(
         joblib.dump(pipeline_pp, '/tmp/pipeline_pp.pkl')
         # TAMBIÉN guardar en el directorio de modelos para la app
         joblib.dump(pipeline_pp, '/opt/airflow/data/models/pipeline_pp.pkl')
-        print("✅ Pipeline guardado en /opt/airflow/data/models/pipeline_pp.pkl")
+        print(" Pipeline guardado en /opt/airflow/data/models/pipeline_pp.pkl")
 
     preprocesar_task = PythonOperator(
         task_id="preprocesar_datos",
@@ -98,7 +98,7 @@ with DAG(
         # Si no existe snapshot → primera corrida
         old_path = os.path.join(old_dir, "df_transacciones_old.parquet")
         if not os.path.exists(old_path):
-            print("⚠️ No existe raw_old → primera ejecución → reentrenar")
+            print(" No existe raw_old → primera ejecución → reentrenar")
             return "reentrenar_modelo"
 
         # Cargar old
@@ -113,10 +113,10 @@ with DAG(
         )
 
         if drift:
-            print("🔴 Drift detectado → reentrenar")
+            print(" Drift detectado → reentrenar")
             return "reentrenar_modelo"
         else:
-            print("🟢 No drift → usar modelo existente")
+            print(" No drift → usar modelo existente")
             return "usar_modelo_existente"
 
     detectar_drift_task = BranchPythonOperator(
@@ -148,9 +148,9 @@ with DAG(
         optimize = len(modelos) == 0
         
         if optimize:
-            print("🎯 Primera ejecución detectada: Se optimizará con Optuna")
+            print(" Primera ejecución detectada: Se optimizará con Optuna")
         else:
-            print("♻️ Reentrenamiento por drift: Se usarán hiperparámetros pre-optimizados")
+            print(" Reentrenamiento por drift: Se usarán hiperparámetros pre-optimizados")
         
         model = train_and_log_model(X_train, X_val, y_train, y_val, optimize=optimize)
         
@@ -158,7 +158,7 @@ with DAG(
         joblib.dump(model, model_path)
         context["ti"].xcom_push(key="model_path", value=model_path)
         
-        print(f"✅ Modelo guardado en: {model_path}")
+        print(f" Modelo guardado en: {model_path}")
 
         df_new = pd.read_json(context["ti"].xcom_pull(task_ids="ingestar_datos",
                                                key="df_transacciones"))
@@ -185,7 +185,7 @@ with DAG(
             raise FileNotFoundError("⚠️ No se encontraron modelos previos entrenados.")
         latest_model = max(modelos, key=os.path.getctime)
         context["ti"].xcom_push(key="model_path", value=latest_model)
-        print(f"✅ Usando modelo existente: {latest_model}")
+        print(f" Usando modelo existente: {latest_model}")
 
     usar_modelo_existente_task = PythonOperator(
         task_id="usar_modelo_existente",
@@ -205,22 +205,16 @@ with DAG(
 
         print("\n==================== PREDICCIÓN ====================\n")
 
-        # ----------------------------------------------------
-        # 1️⃣ CARGAR MODELO
-        # ----------------------------------------------------
         model_path = context["ti"].xcom_pull(
             task_ids=["reentrenar_modelo", "usar_modelo_existente"],
             key="model_path"
         )
         model_path = [m for m in model_path if m is not None][0]
-        print(f"📦 Cargando modelo desde: {model_path}")
+        print(f"Cargando modelo desde: {model_path}")
         model = joblib.load(model_path)
 
-        # ----------------------------------------------------
-        # 2️⃣ CARGAR PIPELINE DE FEATURES
-        # ----------------------------------------------------
         pipeline_pp = joblib.load('/tmp/pipeline_pp.pkl')
-        print("📦 Pipeline de preprocesamiento cargado.")
+        print("Pipeline de preprocesamiento cargado.")
 
         # ----------------------------------------------------
         # 3️⃣ CARGAR DATOS BASE (transacciones, clientes, productos)
@@ -233,14 +227,11 @@ with DAG(
         df_trans["purchase_date"] = pd.to_datetime(df_trans["purchase_date"], unit="ms", errors="coerce")
 
         if df_trans["purchase_date"].isna().all():
-            raise ValueError("❌ Todas las fechas en transacciones son inválidas.")
+            raise ValueError("Todas las fechas en transacciones son inválidas.")
 
         print("Min fecha:", df_trans["purchase_date"].min())
         print("Max fecha:", df_trans["purchase_date"].max())
 
-        # ----------------------------------------------------
-        # 4️⃣ AÑO Y SEMANA SEGÚN TU LÓGICA (Año = .dt.year)
-        # ----------------------------------------------------
         df_trans["Año_cal"] = df_trans["purchase_date"].dt.year
         iso = df_trans["purchase_date"].dt.isocalendar()
         df_trans["Semana"] = iso.week.astype(int)
@@ -259,12 +250,9 @@ with DAG(
             next_week = 1
             next_year = current_year + 1
 
-        print(f"🔮 Prediciendo SOLO para Semana={next_week}, Año={next_year} (Año calendario)")
+        print(f"Prediciendo SOLO para Semana={next_week}, Año={next_year} (Año calendario)")
 
-        # ----------------------------------------------------
-        # 5️⃣ CREAR UNIVERSO cliente × producto
-        #    (SOLO los que existen realmente en transacciones)
-        # ----------------------------------------------------
+
         clientes = df_trans["customer_id"].dropna().unique()
         productos = df_trans["product_id"].dropna().unique()
 
@@ -274,27 +262,23 @@ with DAG(
 
         print(f"Combinaciones generadas: {len(df_pred_input):,}")
 
-        # ----------------------------------------------------
-        # 6️⃣ AGREGAR METADATA NECESARIA PARA EL PIPELINE
-        # ----------------------------------------------------
+ 
         df_pred_input = df_pred_input.merge(df_clientes, on="customer_id", how="left")
         df_pred_input = df_pred_input.merge(df_productos, on="product_id", how="left")
 
-        # ----------------------------------------------------
-        # 7️⃣ TRANSFORMAR FEATURES + PREDECIR
-        # ----------------------------------------------------
+
         X_pred = pipeline_pp.transform(df_pred_input)
         proba = model.predict_proba(X_pred)[:, 1]
         df_pred_input["probabilidad_compra"] = proba
 
-        print("\n📊 Stats probabilidad (predicción futura):")
+        print("\nStats probabilidad (predicción futura):")
         print(f"min: {proba.min():.4f} | max: {proba.max():.4f}")
         print("percentiles 5, 50, 95:", np.percentile(proba, [5, 50, 95]))
 
         # ----------------------------------------------------
         # 8️⃣ APLICAR UMBRAL Y GUARDAR SOLO LOS "SÍ COMPRA"
         # ----------------------------------------------------
-        UMBRAL = 0.5  # 🔧 AJUSTA ESTE VALOR según tu análisis de val
+        UMBRAL = 0.5  
 
         df_positivos = df_pred_input[df_pred_input["probabilidad_compra"] >= UMBRAL]\
             .sort_values("probabilidad_compra", ascending=False)
@@ -307,7 +291,7 @@ with DAG(
 
         pred_path = f"/opt/airflow/data/predictions/pred_semana_{next_year}_{next_week}.csv"
         df_final.to_csv(pred_path, index=False)
-        print(f"💾 Predicciones guardadas en: {pred_path}")
+        print(f" Predicciones guardadas en: {pred_path}")
 
         # ----------------------------------------------------
         # 9️⃣ CREAR future_PREVIO.csv = compras reales de la semana siguiente
@@ -321,7 +305,7 @@ with DAG(
         futuro_path = "/opt/airflow/data/predictions/future_PREVIO.csv"
         df_futuro.to_csv(futuro_path, index=False)
 
-        print(f"💾 future_PREVIO.csv creado con {len(df_futuro)} compras reales futuras.")
+        print(f"future_PREVIO.csv creado con {len(df_futuro)} compras reales futuras.")
         print("\n==================== FIN PREDICCIÓN ====================\n")
 
     predecir_task = PythonOperator(
